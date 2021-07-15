@@ -1,0 +1,39 @@
+[package]
+name = "carousel"
+version = "0.1.0"
+authors = ["Timo Merlin Zint <timozint@gmail.com>"]
+edition = "2018"
+
+[dependencies]
+ahash = { version = "^0.7", feature = ["compile-time-rng"] }
+serde = { version = "^1.0", features = ["derive"] }
+serde_json = "^1.0"
+uuid = { version = "^0.8", features = ["serde", "v4"] }
+indexmap = { version = "^1.5", features = ["rayon"] }
+anyhow = "^1.0"
+relative-path = { version = "^1.4", features = ["serde"] }
+winit = "^0.25"
+roundabout = { path = "../../roundabout" }
+# need replay for serde deserialization ...
+wgpu = {version  = "^0.9", features = ["replay"] }
+bytemuck = { version = "^1.7", features = ["derive"] }
+log = "^0.4"
+blake3 = "^0.3"
+futures = "0.3"
+parking_lot = "^0.11"
+internment = {version = "^0.5", features = ["serde"] }
+crossbeam-channel = "0.4.0"
+notify = "5.0.0-pre.10"
+flume = "^0.10"
+image = "^0.23"
+nalgebra = {version = "^0.27", features = ["serde-serialize"] }
+num_enum = "^0.5"
+arrayvec = "^0.7"
+unicode-linebreak = "^0.1"
+copyless = "^0.1"
+lyon = { version = "^0.17", features = ["serialization"] }
+
+[dev-dependencies]
+env_logger = "^0.8"
+rand = "^0.8"
+
