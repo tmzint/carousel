@@ -30,7 +30,7 @@ fn main() -> anyhow::Result<()> {
         .finish_main_group(|g| PlatformServer::new("display.json", ActionsConfig::default(), g));
 
     Engine::builder()?
-        .with_asset_path("carousel/examples/recursive_assets/assets/")
+        .with_asset_path("examples/recursive_assets/assets/")
         .with_runtime(runtime)
         .finish()
         .start()

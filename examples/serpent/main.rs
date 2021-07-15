@@ -23,7 +23,7 @@ fn main() -> anyhow::Result<()> {
         .finish_main_group(|g| PlatformServer::new("display.json", "actions.json", g));
 
     Engine::builder()?
-        .with_asset_path("carousel/examples/serpent/assets/")
+        .with_asset_path("examples/serpent/assets/")
         .with_runtime(runtime)
         .finish()
         .start()
