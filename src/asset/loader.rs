@@ -1,5 +1,5 @@
-use crate::asset::storage::Assets;
-use crate::asset::{AssetId, AssetIdKind, Strong, StrongAssetId, Weak, WeakAssetId};
+use crate::asset::storage::{Assets, AssetsClient};
+use crate::asset::{AssetId, AssetIdKind, Strong, StrongAssetId, Weak, WeakAssetId, Loaded};
 use crate::util::IndexMap;
 use internment::Intern;
 use relative_path::RelativePath;
@@ -23,6 +23,7 @@ pub trait AssetLoader: Sized + Send + Sync + 'static {
         assets: &'a Assets,
     ) -> anyhow::Result<Self::Asset> {
         // TODO: give struct that can read assets and the asset dirs instead of separation into two methods
+        //  required for inline assets?
         let path = rel_path.to_path(asset_dir);
         log::info!(
             "loading asset of {} from: {}",
@@ -163,9 +164,41 @@ impl<'de, T: Send + Sync + 'static> Deserialize<'de> for AssetId<T, Strong> {
 
 pub type WeakAssetTable<T> = AssetTable<T, Weak>;
 pub type StrongAssetTable<T> = AssetTable<T, Strong>;
+pub type LoadedAssetTable<T> = AssetTable<T, Loaded>;
 
 #[derive(Debug)]
 pub struct AssetTable<T: 'static, S>(IndexMap<Intern<RelativePathBuf>, AssetId<T, S>>);
+
+impl<T: Send + Sync +'static> AssetTable<T, Weak> {
+    pub fn upgrade(&self, client: &AssetsClient) -> StrongAssetTable<T> {
+        let mut strong_table = IndexMap::default();
+
+        for (k, v) in &self.0 {
+            // this should never fail as asset tables require path assets
+            let strong = client.try_upgrade(v).unwrap();
+            strong_table.insert(*k, strong);
+        }
+
+        AssetTable(strong_table)
+    }
+}
+
+impl<T: Send + Sync +'static> AssetTable<T, Strong> {
+    pub fn try_loaded(&self, client: &AssetsClient) -> Option<LoadedAssetTable<T>>{
+        let mut loaded_table = IndexMap::default();
+
+        for (k, v) in &self.0 {
+            match client.try_loaded(v) {
+                Some(loaded) => {
+                    loaded_table.insert(*k, loaded);
+                }
+                None => {return None;}
+            }
+        }
+
+        Some(AssetTable(loaded_table))
+    }
+}
 
 impl<T: 'static, S> Deref for AssetTable<T, S> {
     type Target = IndexMap<Intern<RelativePathBuf>, AssetId<T, S>>;
