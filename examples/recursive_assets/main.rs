@@ -115,17 +115,17 @@ impl LoadingState {
     ) -> StateInstruction<State> {
         let assets = resources.assets.client();
 
-        if let Some(recursive) = assets.get(&state.asset) {
+        if let Some(recursive) = assets.try_get(&state.asset) {
             for (i, eager) in recursive.eager.iter().enumerate() {
-                println!("eager[{}]: {:?}", i, assets.get(eager));
+                println!("eager[{}]: {:?}", i, assets.try_get(eager));
             }
             for (i, lazy) in recursive.lazy.iter().enumerate() {
                 let lazy_loading = assets.try_upgrade(lazy);
-                println!("lazy[{}]: {:?}", i, assets.get(&lazy_loading.unwrap()));
+                println!("lazy[{}]: {:?}", i, assets.try_get(&lazy_loading.unwrap()));
             }
         }
 
-        if let Some(table) = assets.get(&state.table) {
+        if let Some(table) = assets.try_get(&state.table) {
             for (k, v) in table.iter() {
                 println!("table[{}]: {:?}", k, v);
             }

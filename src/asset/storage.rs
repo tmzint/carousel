@@ -1,7 +1,4 @@
-use crate::asset::{
-    AssetId, AssetIdKind, LoadAssetEvent, StoreAssetEvent, StrongAssetId, SyncQueueEntry,
-    UntypedAsset, UntypedAssetId, WeakAssetId,
-};
+use crate::asset::{AssetId, AssetIdKind, LoadAssetEvent, StoreAssetEvent, StrongAssetId, SyncQueueEntry, UntypedAsset, UntypedAssetId, WeakAssetId, Loaded};
 use crate::util::{HashMap, IndexMap, OrderWindow};
 use internment::Intern;
 use parking_lot::{RwLock, RwLockReadGuard};
@@ -10,6 +7,7 @@ use roundabout::prelude::{MessageSender, UntypedMessage};
 use std::borrow::Borrow;
 use std::collections::BTreeSet;
 use std::sync::Arc;
+use crate::prelude::LoadedAssetId;
 
 #[derive(Default)]
 pub(crate) struct InnerAssets {
@@ -236,6 +234,20 @@ impl<'a> AssetsClient<'a> {
     }
 
     #[inline]
+    pub fn try_loaded<T: Send + Sync + 'static>(
+        &self,
+        strong: &StrongAssetId<T>,
+    ) -> Option<LoadedAssetId<T>> {
+        unsafe {
+            if self.has(strong) {
+                Some(strong.to_owned().into_loaded())
+            } else {
+                None
+            }
+        }
+    }
+
+    #[inline]
     pub fn store<T: Send + Sync + 'static, AI: Into<WeakAssetId<T>>>(
         &self,
         asset_id: AI,
@@ -245,7 +257,7 @@ impl<'a> AssetsClient<'a> {
 
         // have to use a val as a direct match won't drop the read lock
         let counter = self.counters.read().get(&asset_id.untyped).cloned();
-        match counter {
+        let strong_asset_id = match counter {
             Some(counter) => asset_id.into_strong(counter),
             None => {
                 let counter = Arc::new(());
@@ -253,13 +265,15 @@ impl<'a> AssetsClient<'a> {
                     .write()
                     .insert(asset_id.untyped, counter.clone());
 
-                log::info!("queue store asset: {:?}", asset_id);
-                let sender = self.sender.borrow();
-                assert!(sender.send(StoreAssetEvent::new(asset_id, asset, sender)));
-
                 asset_id.into_strong(counter)
             }
-        }
+        };
+
+        log::info!("queue store asset: {:?}", asset_id);
+        let sender = self.sender.borrow();
+        assert!(sender.send(StoreAssetEvent::new(asset_id, asset, sender)));
+
+        strong_asset_id
     }
 
     #[inline]
@@ -268,7 +282,16 @@ impl<'a> AssetsClient<'a> {
     }
 
     #[inline]
-    pub fn get<T: std::any::Any, S>(&self, id: &AssetId<T, S>) -> Option<&T> {
+    pub fn get<T: std::any::Any>(&self, id: &AssetId<T, Loaded>) -> &T {
+        let t = self.underlying.get(&id.untyped).unwrap();
+        // see std::any::Any::downcast_ref()
+        // the type check was already done via the typed asset id
+        let any: &(dyn std::any::Any + Send + Sync) = t.as_ref();
+        unsafe { &*(any as *const dyn std::any::Any as *const T) }
+    }
+
+    #[inline]
+    pub fn try_get<T: std::any::Any, S>(&self, id: &AssetId<T, S>) -> Option<&T> {
         self.underlying.get(&id.untyped).map(|t| {
             // see std::any::Any::downcast_ref()
             // the type check was already done via the typed asset id

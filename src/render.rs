@@ -369,13 +369,13 @@ fn on_wgsl_source_asset_event(
     match event.kind {
         AssetEventKind::Load => {
             let assets = state.assets.as_ref().unwrap().client();
-            if let Some(source) = assets.get(&event.id) {
+            if let Some(source) = assets.try_get(&event.id) {
                 renderer
                     .pipelines
                     .upsert_shader(&renderer.device, event.id, source);
 
                 for pipeline_id in renderer.pipelines.pipelines_for_shader(event.id) {
-                    if let Some(pipeline) = assets.get(&pipeline_id) {
+                    if let Some(pipeline) = assets.try_get(&pipeline_id) {
                         if !renderer.pipelines.upsert_pipeline(
                             &renderer.device,
                             pipeline_id,
@@ -406,7 +406,7 @@ fn on_pipeline_asset_event(
     match event.kind {
         AssetEventKind::Load => {
             let assets = state.assets.as_mut().unwrap();
-            if let Some(pipeline) = assets.client().get(&event.id) {
+            if let Some(pipeline) = assets.client().try_get(&event.id) {
                 if !renderer
                     .pipelines
                     .upsert_pipeline(&renderer.device, event.id, pipeline)
@@ -431,9 +431,9 @@ fn on_image_asset_event(
             .expect("render to be available before image");
 
         let assets = state.assets.as_ref().unwrap().client();
-        if let Some(image) = assets.get(&event.id) {
+        if let Some(image) = assets.try_get(&event.id) {
             for texture_id in renderer.textures.textures_for_image(event.id) {
-                if let Some(texture) = assets.get(&texture_id) {
+                if let Some(texture) = assets.try_get(&texture_id) {
                     renderer.textures.upsert_texture(
                         &renderer.device,
                         &renderer.queue,
@@ -460,8 +460,8 @@ fn on_texture_asset_event(
     match event.kind {
         AssetEventKind::Load => {
             let assets = state.assets.as_ref().unwrap().client();
-            if let Some(texture) = assets.get(&event.id) {
-                if let Some(image) = assets.get(&texture.image) {
+            if let Some(texture) = assets.try_get(&event.id) {
+                if let Some(image) = assets.try_get(&texture.image) {
                     renderer.textures.upsert_texture(
                         &renderer.device,
                         &renderer.queue,
@@ -493,7 +493,7 @@ fn on_mesh_asset_event(
     match event.kind {
         AssetEventKind::Load => {
             let assets = state.assets.as_mut().unwrap();
-            if let Some(mesh) = assets.client().get(&event.id) {
+            if let Some(mesh) = assets.client().try_get(&event.id) {
                 renderer
                     .meshes
                     .upsert_mesh(&renderer.device, event.id, mesh);
@@ -550,7 +550,7 @@ fn on_font_layout_asset_event(
             .expect("render to be available before font");
 
         let assets = state.assets.as_ref().unwrap().client();
-        if let Some(font_layout) = assets.get(&event.id) {
+        if let Some(font_layout) = assets.try_get(&event.id) {
             for text_id in renderer.texts.texts_for_font_layout(event.id) {
                 let (raw_text, canvas_layer_id) = renderer
                     .texts
@@ -558,7 +558,7 @@ fn on_font_layout_asset_event(
                     .map(|(b, cl)| (b.to_owned(), cl))
                     .expect("text");
 
-                if let Some(font) = assets.get(&raw_text.font) {
+                if let Some(font) = assets.try_get(&raw_text.font) {
                     let raw_instance = renderer
                         .texts
                         .upsert_text(
@@ -596,7 +596,7 @@ fn on_font_asset_event(
             .expect("render to be available before font");
 
         let assets = state.assets.as_ref().unwrap().client();
-        if let Some(font) = assets.get(&event.id) {
+        if let Some(font) = assets.try_get(&event.id) {
             for text_id in renderer.texts.texts_for_font(event.id) {
                 let (raw_text, canvas_layer_id) = renderer
                     .texts
@@ -604,7 +604,7 @@ fn on_font_asset_event(
                     .map(|(b, cl)| (b.to_owned(), cl))
                     .expect("text");
 
-                if let Some(font_layout) = assets.get(&font.layout) {
+                if let Some(font_layout) = assets.try_get(&font.layout) {
                     let instance = renderer
                         .texts
                         .upsert_text(
@@ -669,8 +669,8 @@ fn on_text_event(state: &mut RenderServer, _context: &mut RuntimeContext, event:
     };
 
     let assets = state.assets.as_ref().unwrap().client();
-    let font = assets.get(&raw_text.font);
-    let font_layout = font.and_then(|f| assets.get(&f.layout));
+    let font = assets.try_get(&raw_text.font);
+    let font_layout = font.and_then(|f| assets.try_get(&f.layout));
 
     if let (Some(font), Some(font_layout)) = (font, font_layout) {
         let raw_instance = renderer

@@ -91,7 +91,7 @@ impl<T: Send + Sync + 'static> ConfigOrigin<T> {
         match &self.inner {
             ConfigOriginInner::Inline(config) => Some(config),
             ConfigOriginInner::AssetPath(_) => None,
-            ConfigOriginInner::AssetId(id) => assets.get(id),
+            ConfigOriginInner::AssetId(id) => assets.try_get(id),
         }
     }
 

@@ -136,9 +136,18 @@ impl Debug for Strong {
     }
 }
 
-// TODO: add LoadedAssetId that guarantees availability?
+#[derive(Clone)]
+pub struct Loaded(Arc<()>);
+
+impl Debug for Loaded {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        f.write_str("Loaded")
+    }
+}
+
 pub type WeakAssetId<T> = AssetId<T, Weak>;
 pub type StrongAssetId<T> = AssetId<T, Strong>;
+pub type LoadedAssetId<T> = AssetId<T, Loaded>;
 
 pub struct AssetId<T, S> {
     untyped: UntypedAssetId,
@@ -195,6 +204,16 @@ impl<T: 'static> AssetId<T, Weak> {
     }
 }
 
+impl<T: 'static> AssetId<T, Strong> {
+    unsafe fn into_loaded(self) -> LoadedAssetId<T> {
+        AssetId {
+            untyped: self.untyped,
+            strength: Loaded(self.strength.0),
+            _pd: Default::default(),
+        }
+    }
+}
+
 impl<T: 'static, S> AssetId<T, S> {
     #[inline]
     pub fn to_weak(&self) -> WeakAssetId<T> {
@@ -209,7 +228,7 @@ impl<T: 'static, S> AssetId<T, S> {
 impl<T: 'static> From<Uuid> for AssetId<T, Weak> {
     #[inline]
     fn from(uuid: Uuid) -> Self {
-        AssetId::new(AssetIdKind::Uuid(uuid))
+        AssetId::new_uuid(uuid)
     }
 }
 
