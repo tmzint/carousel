@@ -26,7 +26,7 @@ crossbeam-channel = "0.4.0"
 notify = "5.0.0-pre.10"
 flume = "^0.10"
 image = "^0.23"
-nalgebra = {version = "^0.27", features = ["serde-serialize"] }
+nalgebra = {version = "^0.28", features = ["serde-serialize"] }
 num_enum = "^0.5"
 arrayvec = "^0.7"
 unicode-linebreak = "^0.1"
