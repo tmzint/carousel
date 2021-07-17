@@ -166,8 +166,58 @@ pub type WeakAssetTable<T> = AssetTable<T, Weak>;
 pub type StrongAssetTable<T> = AssetTable<T, Strong>;
 pub type LoadedAssetTable<T> = AssetTable<T, Loaded>;
 
+pub trait AssetTableKey {
+    fn key(self) -> Intern<RelativePathBuf>;
+}
+
+impl AssetTableKey for Intern<RelativePathBuf> {
+    fn key(self) -> Intern<RelativePathBuf> {
+        self
+    }
+}
+
+impl AssetTableKey for &Intern<RelativePathBuf> {
+    fn key(self) -> Intern<RelativePathBuf> {
+        *self
+    }
+}
+
+impl<'a> AssetTableKey for &'a RelativePath {
+    fn key(self) -> Intern<RelativePathBuf> {
+        Intern::new(self.to_owned())
+    }
+}
+
+impl AssetTableKey for RelativePathBuf {
+    fn key(self) -> Intern<RelativePathBuf> {
+        Intern::new(self)
+    }
+}
+
+impl<'a> AssetTableKey for &'a str {
+    fn key(self) -> Intern<RelativePathBuf> {
+        Intern::new(RelativePath::new(self).to_owned())
+    }
+}
+
+impl<'a> AssetTableKey for &'a String {
+    fn key(self) -> Intern<RelativePathBuf> {
+        Intern::new(RelativePath::new(self).to_owned())
+    }
+}
+
 #[derive(Debug)]
 pub struct AssetTable<T: 'static, S>(IndexMap<Intern<RelativePathBuf>, AssetId<T, S>>);
+
+impl<T: Send + Sync +'static, S> AssetTable<T, S> {
+    pub fn get<K: AssetTableKey>(&self, key: K) -> Option<&AssetId<T, S>> {
+        self.0.get(&key.key())
+    }
+
+    pub fn iter(&self) -> impl Iterator<Item = (&Intern<RelativePathBuf>, &AssetId<T, S>)> {
+        self.0.iter()
+    }
+}
 
 impl<T: Send + Sync +'static> AssetTable<T, Weak> {
     pub fn upgrade(&self, client: &AssetsClient) -> StrongAssetTable<T> {
@@ -197,15 +247,6 @@ impl<T: Send + Sync +'static> AssetTable<T, Strong> {
         }
 
         Some(AssetTable(loaded_table))
-    }
-}
-
-impl<T: 'static, S> Deref for AssetTable<T, S> {
-    type Target = IndexMap<Intern<RelativePathBuf>, AssetId<T, S>>;
-
-    #[inline]
-    fn deref(&self) -> &Self::Target {
-        &self.0
     }
 }
 
