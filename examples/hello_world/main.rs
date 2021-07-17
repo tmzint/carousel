@@ -1,5 +1,5 @@
 use carousel::prelude::*;
-use nalgebra::{Point3, Rotation2, Vector2};
+use nalgebra::{Point2, Point3, Rotation2, Vector2};
 
 fn main() -> anyhow::Result<()> {
     env_logger::builder()
@@ -82,7 +82,7 @@ impl SetupState {
         let assets = resources.assets.client();
         let render = &resources.render;
         let camera_rect = Vector2::new(1280.0, 720.0);
-        let camera_eye = Point3::new(0.0, 0.0, 10000.0);
+        let camera_eye = Point2::new(0.0, 0.0);
 
         let main_camera = render.camera(camera_rect, camera_eye);
         let main_layer = render.layer();

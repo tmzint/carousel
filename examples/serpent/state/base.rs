@@ -2,7 +2,7 @@ use crate::state::menu::MenuSetupState;
 use crate::state::{RenderResources, SimResource, State};
 use crate::{LOGICAL_HEIGHT, LOGICAL_WIDTH};
 use carousel::prelude::*;
-use nalgebra::{Point3, Vector2};
+use nalgebra::{Point2, Vector2};
 
 #[derive(Default)]
 pub struct SetupState;
@@ -21,7 +21,7 @@ impl SetupState {
     ) -> StateInstruction<State> {
         let render = &resources.render;
         let camera_rect = Vector2::new(LOGICAL_WIDTH as f32, LOGICAL_HEIGHT as f32);
-        let camera_eye = Point3::new(0.0, 0.0, 10000.0);
+        let camera_eye = Point2::new(0.0, 0.0);
 
         let main_camera = render.camera(camera_rect, camera_eye);
         let main_layer = render.layer();

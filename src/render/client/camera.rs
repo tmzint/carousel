@@ -1,6 +1,6 @@
 use crate::render::camera::RawCamera;
 use crate::render::message::{CameraEvent, CameraEventKind};
-use nalgebra::{Point2, Point3, Vector2};
+use nalgebra::{Point2, Vector2};
 use roundabout::prelude::MessageSender;
 use std::ops::{Deref, DerefMut};
 use uuid::Uuid;
@@ -13,7 +13,7 @@ pub struct Camera {
 }
 
 impl Camera {
-    pub(crate) fn new(rect: Vector2<f32>, eye: Point3<f32>, sender: MessageSender) -> Self {
+    pub(crate) fn new(rect: Vector2<f32>, eye: Point2<f32>, sender: MessageSender) -> Self {
         let camera = Self {
             id: Uuid::new_v4(),
             raw: RawCamera::new(rect, eye),

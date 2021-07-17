@@ -1,8 +1,10 @@
 use crate::util::{Counted, HashMap};
-use nalgebra::{Isometry3, Matrix4, Orthographic3, Point3, Vector2, Vector3};
+use nalgebra::{Isometry3, Matrix4, Orthographic3, Point3, Vector2, Vector3, Point2};
 use std::cmp::Ordering;
 use std::ops::{Deref, DerefMut};
 use uuid::Uuid;
+
+const ZFAR: f32 = 20000.0;
 
 #[rustfmt::skip]
 const OPENGL_TO_WGPU_MATRIX: Matrix4<f32> = Matrix4::new(
@@ -45,7 +47,7 @@ impl OrthographicProjection {
             -half.y as f32,
             half.y as f32,
             self.znear,
-            self.zfar,
+            ZFAR,
         )
         .to_homogeneous();
 
@@ -86,25 +88,25 @@ impl OrthographicProjection {
 
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub struct RawCamera {
-    pub eye: Point3<f32>,
+    pub eye: Point2<f32>,
     pub projection: OrthographicProjection,
 }
 
 impl RawCamera {
     #[inline]
-    pub fn new(rect: Vector2<f32>, eye: Point3<f32>) -> Self {
+    pub fn new(rect: Vector2<f32>, eye: Point2<f32>) -> Self {
         let projection = OrthographicProjection::new(rect);
         RawCamera::from_parts(eye, projection)
     }
 
     #[inline]
-    pub fn from_parts(eye: Point3<f32>, projection: OrthographicProjection) -> Self {
+    pub fn from_parts(eye: Point2<f32>, projection: OrthographicProjection) -> Self {
         Self { eye, projection }
     }
 
     #[inline]
     pub fn view(&self) -> Isometry3<f32> {
-        Isometry3::look_at_rh(&self.eye, &(self.eye - Vector3::z()), &Vector3::y())
+        Isometry3::look_at_rh(&Point3::new(self.eye.x, self.eye.y, ZFAR / 2.0), &Point3::new(self.eye.x, self.eye.y, - 1.0), &Vector3::y())
     }
 
     #[inline]

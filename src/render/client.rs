@@ -21,7 +21,7 @@ use crate::render::message::{
 use crate::render::pipeline::{Pipeline, Pipelines};
 use crate::render::text::{Font, Texts};
 use crate::render::view::{Texture, Textures};
-use nalgebra::{Point3, Vector2, Vector3};
+use nalgebra::{Vector2, Vector3, Point2};
 use parking_lot::Mutex;
 use roundabout::prelude::MessageSender;
 use std::marker::PhantomData;
@@ -43,7 +43,7 @@ impl RenderClient {
     }
 
     #[inline]
-    pub fn camera(&self, rect: Vector2<f32>, eye: Point3<f32>) -> Camera {
+    pub fn camera(&self, rect: Vector2<f32>, eye: Point2<f32>) -> Camera {
         Camera::new(rect, eye, self.sender.clone())
     }
 
