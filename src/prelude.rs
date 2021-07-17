@@ -1,6 +1,6 @@
 // TODO: rework public access
 pub use crate::asset::loader::{AssetLoader, StrongAssetTable, WeakAssetTable, LoadedAssetTable};
-pub use crate::asset::storage::Assets;
+pub use crate::asset::storage::{Assets, AssetsClient};
 pub use crate::asset::{
     AssetEvent, AssetEventKind, AssetServer, AssetsCreatedEvent, LoadAssetEvent, StrongAssetId, LoadedAssetId,
     WeakAssetId,

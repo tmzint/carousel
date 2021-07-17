@@ -204,6 +204,17 @@ impl<T: 'static> AssetId<T, Weak> {
     }
 }
 
+impl<T: 'static> AssetId<T, Loaded> {
+    #[inline]
+    pub fn as_strong(&self) -> StrongAssetId<T> {
+        AssetId {
+            untyped: self.untyped,
+            strength: Strong(self.strength.0.clone()),
+            _pd: Default::default(),
+        }
+    }
+}
+
 impl<T: 'static> AssetId<T, Strong> {
     unsafe fn into_loaded(self) -> LoadedAssetId<T> {
         AssetId {
@@ -499,6 +510,8 @@ fn on_load_asset_event<T: 'static + Send + Sync>(
                 match (loader)(&state.asset_dir, event.id.untyped, &state.assets, context) {
                     Ok(ok) => ok,
                     Err(e) => {
+                        // TODO: panic? -> this is probably required for LoadedAssetTables otherwise how to fail the loading?
+                        //  -> dependency registration?
                         log::error!(
                             "Could not load asset {:?}: {}",
                             event.id.untyped.kind.path(),
