@@ -10,7 +10,7 @@ use ahash::AHasher;
 use lyon::tessellation::{
     BuffersBuilder, StrokeOptions as LStrokeOptions, StrokeTessellator, StrokeVertex, VertexBuffers,
 };
-use nalgebra::{Isometry3, Point2, Rotation2, UnitQuaternion, Vector2, Vector3, Translation3};
+use nalgebra::{Isometry3, Point2, Rotation2, UnitQuaternion, Vector2, Vector3, Translation3, Similarity3};
 use serde::{Deserialize, Serialize};
 use std::hash::{Hash, Hasher};
 use uuid::Uuid;
@@ -191,6 +191,7 @@ pub struct RawCurve<S> {
     pub rotation: Rotation2<f32>,
     pub scale: Vector2<f32>,
     pub tint: [f32; 3],
+    pub world: Similarity3<f32>
 }
 
 impl<S: Clone> RawCurve<S> {
@@ -204,6 +205,7 @@ impl<S: Clone> RawCurve<S> {
             rotation: self.rotation,
             scale: self.scale,
             tint: self.tint,
+            world: self.world
         }
     }
 
@@ -223,6 +225,7 @@ impl<S: Clone> RawCurve<S> {
             ),
             scale: Vector3::new(self.scale.x, self.scale.y, 1.0),
             tint: self.tint,
+            world: self.world
         }
     }
 

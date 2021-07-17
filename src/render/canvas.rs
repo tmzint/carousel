@@ -7,7 +7,7 @@ use crate::render::view::{RealizedView, Texture, Textures};
 use crate::render::Samples;
 use crate::some_or_continue;
 use crate::util::{Counted, HashMap, IndexMap};
-use nalgebra::{Isometry3, Vector2, Vector3};
+use nalgebra::{Isometry3, Vector2, Vector3, Similarity3};
 use std::collections::btree_map::Entry;
 use std::collections::BTreeMap;
 use std::marker::PhantomData;
@@ -23,6 +23,7 @@ pub struct RawInstance<S> {
     pub model: Isometry3<f32>,
     pub scale: Vector3<f32>,
     pub tint: [f32; 3],
+    pub world: Similarity3<f32>
 }
 
 impl<S> RawInstance<S> {
@@ -35,6 +36,7 @@ impl<S> RawInstance<S> {
             model: self.model,
             scale: self.scale,
             tint: self.tint,
+            world: self.world
         }
     }
 }
@@ -148,8 +150,8 @@ impl RealizedCanvasLayer {
         let instance_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("Instance Buffer"),
             contents: bytemuck::cast_slice(&vec![Instance {
-                model: raw.model.to_homogeneous().into(),
-                scale: raw.scale.into(),
+                model: (raw.world * raw.model).to_homogeneous().into(),
+                scale: (raw.scale * raw.world.scaling()).into(),
                 tint: raw.tint,
                 texture_layer: raw.texture_layer as i32,
             }]),

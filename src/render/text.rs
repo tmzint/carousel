@@ -9,7 +9,7 @@ use crate::render::view::FilterMode;
 use crate::util::{HashMap, OrderWindow};
 use ahash::AHasher;
 use copyless::VecHelper;
-use nalgebra::{Isometry3, Point2, Rotation2, UnitQuaternion, Vector3, Translation3};
+use nalgebra::{Isometry3, Point2, Rotation2, UnitQuaternion, Vector3, Translation3, Similarity3};
 use serde::Deserialize;
 use std::borrow::Cow;
 use std::collections::BTreeSet;
@@ -562,6 +562,7 @@ pub struct RawText<S> {
     pub horizontal_alignment: HorizontalAlignment,
     pub scale: f32,
     pub tint: [f32; 3],
+    pub world: Similarity3<f32>
 }
 
 impl<S: Clone> RawText<S> {
@@ -581,6 +582,7 @@ impl<S: Clone> RawText<S> {
             horizontal_alignment: self.horizontal_alignment,
             scale: self.scale,
             tint: self.tint,
+            world: self.world
         }
     }
 
@@ -606,6 +608,7 @@ impl<S: Clone> RawText<S> {
                 font_layout_distance_range,
             ),
             tint: self.tint,
+            world: self.world
         }
     }
 

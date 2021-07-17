@@ -5,7 +5,7 @@ use crate::render::mesh::Mesh;
 use crate::render::message::{InstanceEvent, InstanceEventKind};
 use crate::render::pipeline::Pipeline;
 use crate::render::view::Texture;
-use nalgebra::{Isometry3, Vector3};
+use nalgebra::{Isometry3, Vector3, Similarity3};
 use roundabout::prelude::MessageSender;
 use serde::Deserialize;
 use std::ops::{Deref, DerefMut};
@@ -28,6 +28,8 @@ pub struct InstanceBuilder<S> {
     pub scale: Vector3<f32>,
     #[serde(default = "super::arr3_one")]
     pub tint: [f32; 3],
+    #[serde(default = "Similarity3::identity")]
+    pub world: Similarity3<f32>
 }
 
 impl<S> InstanceBuilder<S> {
@@ -72,6 +74,12 @@ impl<S> InstanceBuilder<S> {
         self.tint = tint;
         self
     }
+
+    #[inline]
+    pub fn with_world(mut self, world: Similarity3<f32>) -> Self {
+        self.world = world;
+        self
+    }
 }
 
 impl InstanceBuilder<Strong> {
@@ -108,6 +116,7 @@ impl InstanceBuilder<Strong> {
             model: self.model,
             scale: self.scale,
             tint: self.tint,
+            world: self.world
         }
     }
 }
@@ -131,6 +140,7 @@ impl<S> Default for InstanceBuilder<S> {
             model: Isometry3::identity(),
             scale: super::vector3_one(),
             tint: super::arr3_one(),
+            world: Similarity3::identity()
         }
     }
 }
