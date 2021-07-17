@@ -5,7 +5,7 @@ use crate::render::message::{TextEvent, TextEventKind};
 use crate::render::pipeline::Pipeline;
 use crate::render::text::{Font, HorizontalAlignment, RawText, VerticalAlignment};
 use crate::util::{Bounded, Bounds};
-use nalgebra::{Isometry2, Point3, Rotation2, Vector2};
+use nalgebra::{Isometry2, Point2, Rotation2, Vector2};
 use serde::Deserialize;
 use std::borrow::Cow;
 use std::ops::{Deref, DerefMut};
@@ -20,8 +20,10 @@ pub struct TextBuilder<S> {
     pub font: Option<AssetId<Font, S>>,
     #[serde(default)]
     pub content: Cow<'static, str>,
-    #[serde(default = "Point3::origin")]
-    pub position: Point3<f32>,
+    #[serde(default = "Point2::origin")]
+    pub position: Point2<f32>,
+    #[serde(default)]
+    pub z_index: f32,
     #[serde(default = "Rotation2::identity")]
     pub rotation: Rotation2<f32>,
     #[serde(default = "Text::default_text_size")]
@@ -62,8 +64,14 @@ impl<S> TextBuilder<S> {
     }
 
     #[inline]
-    pub fn with_position(mut self, position: Point3<f32>) -> Self {
+    pub fn with_position(mut self, position: Point2<f32>) -> Self {
         self.position = position;
+        self
+    }
+
+    #[inline]
+    pub fn with_z_index(mut self, z_index: f32) -> Self {
+        self.z_index = z_index;
         self
     }
 
@@ -144,6 +152,7 @@ impl TextBuilder<Strong> {
             font: self.font.unwrap_or_else(|| defaults.font.clone()),
             content: self.content,
             position: self.position,
+            z_index: self.z_index,
             rotation: self.rotation,
             point: self.point,
             width: self.width,
@@ -172,7 +181,8 @@ impl<S> Default for TextBuilder<S> {
             pipeline: None,
             font: None,
             content: Default::default(),
-            position: Point3::origin(),
+            position: Point2::origin(),
+            z_index: 0.0,
             rotation: Rotation2::identity(),
             point: Text::default_text_size(),
             width: None,

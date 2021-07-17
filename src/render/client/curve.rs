@@ -3,7 +3,7 @@ use crate::render::client::{CanvasLayer, LayerSpawner, RenderDefaults};
 use crate::render::curve::{Path, RawCurve, StrokeOptions};
 use crate::render::message::{CurveEvent, CurveEventKind};
 use crate::render::pipeline::Pipeline;
-use nalgebra::{Point3, Rotation2, Vector2};
+use nalgebra::{Point2, Rotation2, Vector2};
 use roundabout::prelude::MessageSender;
 use serde::Deserialize;
 use std::ops::{Deref, DerefMut};
@@ -18,8 +18,10 @@ pub struct CurveBuilder<S> {
     pub path: Path,
     #[serde(default)]
     pub stroke: StrokeOptions,
-    #[serde(default = "Point3::origin")]
-    pub position: Point3<f32>,
+    #[serde(default = "Point2::origin")]
+    pub position: Point2<f32>,
+    #[serde(default)]
+    pub z_index: f32,
     #[serde(default = "Rotation2::identity")]
     pub rotation: Rotation2<f32>,
     #[serde(default = "super::vector2_one")]
@@ -48,8 +50,14 @@ impl<S> CurveBuilder<S> {
     }
 
     #[inline]
-    pub fn with_position(mut self, position: Point3<f32>) -> Self {
+    pub fn with_position(mut self, position: Point2<f32>) -> Self {
         self.position = position;
+        self
+    }
+
+    #[inline]
+    pub fn with_z_index(mut self, z_index: f32) -> Self {
+        self.z_index = z_index;
         self
     }
 
@@ -94,6 +102,7 @@ impl CurveBuilder<Strong> {
             path: self.path,
             stroke: self.stroke,
             position: self.position,
+            z_index: self.z_index,
             rotation: self.rotation,
             scale: self.scale,
             tint: self.tint,
@@ -116,7 +125,8 @@ impl<S> Default for CurveBuilder<S> {
             pipeline: None,
             path: Default::default(),
             stroke: Default::default(),
-            position: Point3::origin(),
+            position: Point2::origin(),
+            z_index: 0.0,
             rotation: Rotation2::identity(),
             scale: super::vector2_one(),
             tint: super::arr3_one(),

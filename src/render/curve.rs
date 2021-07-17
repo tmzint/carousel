@@ -10,7 +10,7 @@ use ahash::AHasher;
 use lyon::tessellation::{
     BuffersBuilder, StrokeOptions as LStrokeOptions, StrokeTessellator, StrokeVertex, VertexBuffers,
 };
-use nalgebra::{Isometry3, Point2, Point3, Rotation2, UnitQuaternion, Vector2, Vector3};
+use nalgebra::{Isometry3, Point2, Rotation2, UnitQuaternion, Vector2, Vector3, Translation3};
 use serde::{Deserialize, Serialize};
 use std::hash::{Hash, Hasher};
 use uuid::Uuid;
@@ -186,7 +186,8 @@ pub struct RawCurve<S> {
     pub pipeline: AssetId<Pipeline, S>,
     pub path: Path,
     pub stroke: StrokeOptions,
-    pub position: Point3<f32>,
+    pub position: Point2<f32>,
+    pub z_index: f32,
     pub rotation: Rotation2<f32>,
     pub scale: Vector2<f32>,
     pub tint: [f32; 3],
@@ -199,6 +200,7 @@ impl<S: Clone> RawCurve<S> {
             path: self.path.clone(),
             stroke: self.stroke,
             position: self.position,
+            z_index: self.z_index,
             rotation: self.rotation,
             scale: self.scale,
             tint: self.tint,
@@ -216,7 +218,7 @@ impl<S: Clone> RawCurve<S> {
             texture: white_texture,
             texture_layer: 0,
             model: Isometry3::from_parts(
-                self.position.into(),
+                Translation3::new(self.position.x, self.position.y, self.z_index),
                 UnitQuaternion::from_axis_angle(&Vector3::z_axis(), self.rotation.angle()),
             ),
             scale: Vector3::new(self.scale.x, self.scale.y, 1.0),

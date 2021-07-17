@@ -1,7 +1,7 @@
 use crate::state::game::GameSetupState;
 use crate::state::{RenderResources, SimResource, State};
 use carousel::prelude::*;
-use nalgebra::Point3;
+use nalgebra::Point2;
 
 #[derive(Default)]
 pub struct MenuSetupState;
@@ -39,7 +39,8 @@ impl MenuState {
                 .with_point(32.0)
                 .with_width(128.0)
                 .with_height(64.0)
-                .with_position(Point3::new(0.0, 32.0, 0.1)),
+                .with_position(Point2::new(0.0, 32.0))
+                .with_z_index(0.1),
         );
 
         let exit_text = render_resource.ui_layer.spawn(
@@ -48,7 +49,7 @@ impl MenuState {
                 .with_point(32.0)
                 .with_width(128.0)
                 .with_height(64.0)
-                .with_position(Point3::new(0.0, -32.0, 0.0)),
+                .with_position(Point2::new(0.0, -32.0)),
         );
 
         MenuState {

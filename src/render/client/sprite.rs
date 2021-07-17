@@ -6,7 +6,7 @@ use crate::render::message::{InstanceEvent, InstanceEventKind};
 use crate::render::pipeline::Pipeline;
 use crate::render::view::Texture;
 use crate::util::{Bounded, Bounds};
-use nalgebra::{Isometry2, Isometry3, Point3, Rotation2, UnitQuaternion, Vector2, Vector3};
+use nalgebra::{Isometry2, Isometry3, Rotation2, UnitQuaternion, Vector2, Vector3, Point2, Translation3};
 use roundabout::prelude::MessageSender;
 use serde::Deserialize;
 use std::ops::{Deref, DerefMut};
@@ -17,7 +17,8 @@ pub struct RawSprite<S> {
     pub pipeline: AssetId<Pipeline, S>,
     pub texture: AssetId<Texture, S>,
     pub texture_layer: u32,
-    pub position: Point3<f32>,
+    pub position: Point2<f32>,
+    pub z_index: f32,
     pub rotation: Rotation2<f32>,
     pub size: Vector2<f32>,
     pub scale: Vector2<f32>,
@@ -31,6 +32,7 @@ impl<S> RawSprite<S> {
             texture: self.texture.to_weak(),
             texture_layer: self.texture_layer,
             position: self.position,
+            z_index: self.z_index,
             rotation: self.rotation,
             size: self.size,
             scale: self.scale,
@@ -45,7 +47,7 @@ impl<S> RawSprite<S> {
             texture: self.texture,
             texture_layer: self.texture_layer,
             model: Isometry3::from_parts(
-                self.position.into(),
+                Translation3::new(self.position.x, self.position.y, self.z_index),
                 UnitQuaternion::from_axis_angle(&Vector3::z_axis(), self.rotation.angle()),
             ),
             scale: Vector3::new(self.size.x * self.scale.x, self.size.y * self.scale.y, 1.0),
@@ -63,8 +65,10 @@ pub struct SpriteBuilder<S> {
     pub texture: Option<AssetId<Texture, S>>,
     #[serde(default)]
     pub texture_layer: u32,
-    #[serde(default = "Point3::origin")]
-    pub position: Point3<f32>,
+    #[serde(default = "Point2::origin")]
+    pub position: Point2<f32>,
+    #[serde(default)]
+    pub z_index: f32,
     #[serde(default = "Rotation2::identity")]
     pub rotation: Rotation2<f32>,
     #[serde(default = "super::vector2_one")]
@@ -95,8 +99,14 @@ impl<S> SpriteBuilder<S> {
     }
 
     #[inline]
-    pub fn with_position(mut self, position: Point3<f32>) -> Self {
+    pub fn with_position(mut self, position: Point2<f32>) -> Self {
         self.position = position;
+        self
+    }
+
+    #[inline]
+    pub fn with_z_index(mut self, z_index: f32) -> Self {
+        self.z_index = z_index;
         self
     }
 
@@ -159,6 +169,7 @@ impl SpriteBuilder<Strong> {
                 .unwrap_or_else(|| defaults.white_texture.clone()),
             texture_layer: self.texture_layer,
             position: self.position,
+            z_index: self.z_index,
             rotation: self.rotation,
             size: self.size,
             scale: self.scale,
@@ -182,7 +193,8 @@ impl<S> Default for SpriteBuilder<S> {
             pipeline: None,
             texture: None,
             texture_layer: 0,
-            position: Point3::origin(),
+            position: Point2::origin(),
+            z_index: 0.0,
             rotation: Rotation2::identity(),
             size: super::vector2_one(),
             scale: super::vector2_one(),

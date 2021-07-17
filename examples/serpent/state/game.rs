@@ -1,7 +1,7 @@
 use crate::state::menu::MenuSetupState;
 use crate::state::{RenderResources, SimResource, State};
 use carousel::prelude::*;
-use nalgebra::{Point2, Point3, Translation2, Vector2};
+use nalgebra::{Point2, Translation2, Vector2};
 use rand::prelude::SliceRandom;
 use std::time::Duration;
 
@@ -51,7 +51,7 @@ impl SerpentSegment {
         let logical = grid_point_to_logical(position);
         let rect = render_resource.main_layer.spawn(
             Rectangle::builder()
-                .with_position(Point3::new(logical.x, logical.y, 0.0))
+                .with_position(Point2::new(logical.x, logical.y))
                 .with_size(Vector2::new(GRID_ENTRY_EXTENDS, GRID_ENTRY_EXTENDS) * 0.8)
                 .with_tint([1.0, 1.0, 1.0]),
         );
@@ -71,7 +71,7 @@ impl Food {
         let logical = grid_point_to_logical(position);
         let rect = render_resource.main_layer.spawn(
             Rectangle::builder()
-                .with_position(Point3::new(logical.x, logical.y, 0.0))
+                .with_position(Point2::new(logical.x, logical.y))
                 .with_size(Vector2::new(GRID_ENTRY_EXTENDS, GRID_ENTRY_EXTENDS) * 0.5)
                 .with_tint([1.0, 1.0, 1.0]),
         );
@@ -250,14 +250,14 @@ impl GameOverState {
             Text::builder()
                 .with_content("game over")
                 .with_point(32.0)
-                .with_position(Point3::new(0.0, 96.0, 0.0)),
+                .with_position(Point2::new(0.0, 96.0)),
         );
 
         let score_text = render_resource.ui_layer.spawn(
             Text::builder()
                 .with_content(format!("{} points", points))
                 .with_point(22.0)
-                .with_position(Point3::new(0.0, 48.0, 0.0)),
+                .with_position(Point2::new(0.0, 48.0)),
         );
 
         let restart_text = render_resource.ui_layer.spawn(
@@ -266,7 +266,7 @@ impl GameOverState {
                 .with_point(22.0)
                 .with_width(128.0)
                 .with_height(44.0)
-                .with_position(Point3::new(0.0, -32.0, 0.0)),
+                .with_position(Point2::new(0.0, -32.0)),
         );
 
         let exit_text = render_resource.ui_layer.spawn(
@@ -275,7 +275,7 @@ impl GameOverState {
                 .with_point(22.0)
                 .with_width(128.0)
                 .with_height(44.0)
-                .with_position(Point3::new(0.0, -76.0, 0.0)),
+                .with_position(Point2::new(0.0, -76.0)),
         );
 
         Self {

@@ -9,7 +9,7 @@ use crate::render::view::FilterMode;
 use crate::util::{HashMap, OrderWindow};
 use ahash::AHasher;
 use copyless::VecHelper;
-use nalgebra::{Isometry3, Point2, Point3, Rotation2, UnitQuaternion, Vector3};
+use nalgebra::{Isometry3, Point2, Rotation2, UnitQuaternion, Vector3, Translation3};
 use serde::Deserialize;
 use std::borrow::Cow;
 use std::collections::BTreeSet;
@@ -551,7 +551,8 @@ pub struct RawText<S> {
     pub font: AssetId<Font, S>,
     // Optimization: Arc?
     pub content: Cow<'static, str>,
-    pub position: Point3<f32>,
+    pub position: Point2<f32>,
+    pub z_index: f32,
     pub rotation: Rotation2<f32>,
     pub point: f32,
     pub width: Option<f32>,
@@ -570,6 +571,7 @@ impl<S: Clone> RawText<S> {
             font: self.font.to_weak(),
             content: self.content.clone(),
             position: self.position,
+            z_index: self.z_index,
             rotation: self.rotation,
             point: self.point,
             width: self.width,
@@ -595,7 +597,7 @@ impl<S: Clone> RawText<S> {
             texture: font_texture,
             texture_layer: 0,
             model: Isometry3::from_parts(
-                self.position.into(),
+                Translation3::new(self.position.x, self.position.y, self.z_index),
                 UnitQuaternion::from_axis_angle(&Vector3::z_axis(), self.rotation.angle()),
             ),
             scale: Vector3::new(

@@ -1,5 +1,5 @@
 use carousel::prelude::*;
-use nalgebra::{Point2, Point3, Rotation2, Vector2};
+use nalgebra::{Point2, Rotation2, Vector2};
 
 fn main() -> anyhow::Result<()> {
     env_logger::builder()
@@ -98,7 +98,7 @@ impl SetupState {
             Text::builder()
                 .with_content("Hello World!")
                 .with_point(16.0)
-                .with_position(Point3::new(-300.0, 0.0, 0.0)),
+                .with_position(Point2::new(-300.0, 0.0)),
         );
 
         let canvas = render
