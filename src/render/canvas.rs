@@ -147,7 +147,6 @@ impl RealizedCanvasLayer {
             }
         };
 
-        println!("{:?}", raw.world);
         // TODO: update partial buffer, encoder.copy_buffer_to_buffer(..)
         let instance_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("Instance Buffer"),
