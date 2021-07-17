@@ -127,6 +127,7 @@ impl RealizedCanvasLayer {
                     && &current.raw.texture == &instance_entry.raw.texture
                     && &current.raw.mesh == &instance_entry.raw.mesh
                     && &current.raw.pipeline == &instance_entry.raw.pipeline
+                    && &current.raw.world == &instance_entry.raw.world
                 {
                     // identical, no changes needed
                     return;
@@ -146,6 +147,7 @@ impl RealizedCanvasLayer {
             }
         };
 
+        println!("{:?}", raw.world);
         // TODO: update partial buffer, encoder.copy_buffer_to_buffer(..)
         let instance_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("Instance Buffer"),
