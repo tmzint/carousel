@@ -5,7 +5,7 @@ use crate::render::message::{TextEvent, TextEventKind};
 use crate::render::pipeline::Pipeline;
 use crate::render::text::{Font, HorizontalAlignment, RawText, VerticalAlignment};
 use crate::util::{Bounded, Bounds};
-use nalgebra::{Isometry2, Point2, Rotation2, Vector2, Similarity3};
+use nalgebra::{Isometry2, Point2, Rotation2, Similarity2, Vector2};
 use serde::Deserialize;
 use std::borrow::Cow;
 use std::ops::{Deref, DerefMut};
@@ -42,8 +42,9 @@ pub struct TextBuilder<S> {
     pub scale: f32,
     #[serde(default = "super::arr3_one")]
     pub tint: [f32; 3],
-    #[serde(default = "Similarity3::identity")]
-    pub world: Similarity3<f32>
+    #[serde(default = "Similarity2::identity")]
+    pub world: Similarity2<f32>,
+    pub world_z_index: f32,
 }
 
 impl<S> TextBuilder<S> {
@@ -132,8 +133,14 @@ impl<S> TextBuilder<S> {
     }
 
     #[inline]
-    pub fn with_world(mut self, world: Similarity3<f32>) -> Self {
+    pub fn with_world(mut self, world: Similarity2<f32>) -> Self {
         self.world = world;
+        self
+    }
+
+    #[inline]
+    pub fn with_world_z_index(mut self, world_z_index: f32) -> Self {
+        self.world_z_index = world_z_index;
         self
     }
 }
@@ -170,7 +177,8 @@ impl TextBuilder<Strong> {
             horizontal_alignment: self.horizontal_alignment,
             scale: self.scale,
             tint: self.tint,
-            world: self.world
+            world: self.world,
+            world_z_index: self.world_z_index,
         }
     }
 }
@@ -201,7 +209,8 @@ impl<S> Default for TextBuilder<S> {
             horizontal_alignment: Default::default(),
             scale: super::f32_one(),
             tint: super::arr3_one(),
-            world: Similarity3::identity()
+            world: Similarity2::identity(),
+            world_z_index: 0.0,
         }
     }
 }

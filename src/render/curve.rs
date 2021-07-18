@@ -10,7 +10,10 @@ use ahash::AHasher;
 use lyon::tessellation::{
     BuffersBuilder, StrokeOptions as LStrokeOptions, StrokeTessellator, StrokeVertex, VertexBuffers,
 };
-use nalgebra::{Isometry3, Point2, Rotation2, UnitQuaternion, Vector2, Vector3, Translation3, Similarity3};
+use nalgebra::{
+    Isometry3, Point2, Rotation2, Similarity2, Similarity3, Translation3, UnitQuaternion, Vector2,
+    Vector3,
+};
 use serde::{Deserialize, Serialize};
 use std::hash::{Hash, Hasher};
 use uuid::Uuid;
@@ -191,7 +194,8 @@ pub struct RawCurve<S> {
     pub rotation: Rotation2<f32>,
     pub scale: Vector2<f32>,
     pub tint: [f32; 3],
-    pub world: Similarity3<f32>
+    pub world: Similarity2<f32>,
+    pub world_z_index: f32,
 }
 
 impl<S: Clone> RawCurve<S> {
@@ -205,7 +209,8 @@ impl<S: Clone> RawCurve<S> {
             rotation: self.rotation,
             scale: self.scale,
             tint: self.tint,
-            world: self.world
+            world: self.world,
+            world_z_index: self.world_z_index,
         }
     }
 
@@ -225,7 +230,18 @@ impl<S: Clone> RawCurve<S> {
             ),
             scale: Vector3::new(self.scale.x, self.scale.y, 1.0),
             tint: self.tint,
-            world: self.world
+            world: Similarity3::from_parts(
+                Translation3::new(
+                    self.world.isometry.translation.x,
+                    self.world.isometry.translation.y,
+                    self.world_z_index,
+                ),
+                UnitQuaternion::from_axis_angle(
+                    &Vector3::z_axis(),
+                    self.world.isometry.rotation.angle(),
+                ),
+                self.world.scaling(),
+            ),
         }
     }
 

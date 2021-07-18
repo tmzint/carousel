@@ -152,7 +152,7 @@ impl RealizedCanvasLayer {
             label: Some("Instance Buffer"),
             contents: bytemuck::cast_slice(&vec![Instance {
                 model: (raw.world * raw.model).to_homogeneous().into(),
-                scale: (raw.scale * raw.world.scaling()).into(),
+                scale: raw.scale.into(),
                 tint: raw.tint,
                 texture_layer: raw.texture_layer as i32,
             }]),

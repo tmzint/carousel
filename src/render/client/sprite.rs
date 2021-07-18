@@ -6,7 +6,10 @@ use crate::render::message::{InstanceEvent, InstanceEventKind};
 use crate::render::pipeline::Pipeline;
 use crate::render::view::Texture;
 use crate::util::{Bounded, Bounds};
-use nalgebra::{Isometry2, Isometry3, Rotation2, UnitQuaternion, Vector2, Vector3, Point2, Translation3, Similarity3};
+use nalgebra::{
+    Isometry2, Isometry3, Point2, Rotation2, Similarity2, Similarity3, Translation3,
+    UnitQuaternion, Vector2, Vector3,
+};
 use roundabout::prelude::MessageSender;
 use serde::Deserialize;
 use std::ops::{Deref, DerefMut};
@@ -23,7 +26,8 @@ pub struct RawSprite<S> {
     pub size: Vector2<f32>,
     pub scale: Vector2<f32>,
     pub tint: [f32; 3],
-    pub world: Similarity3<f32>
+    pub world: Similarity2<f32>,
+    pub world_z_index: f32,
 }
 
 impl<S> RawSprite<S> {
@@ -38,7 +42,8 @@ impl<S> RawSprite<S> {
             size: self.size,
             scale: self.scale,
             tint: self.tint,
-            world: self.world
+            world: self.world,
+            world_z_index: self.world_z_index,
         }
     }
 
@@ -54,7 +59,18 @@ impl<S> RawSprite<S> {
             ),
             scale: Vector3::new(self.size.x * self.scale.x, self.size.y * self.scale.y, 1.0),
             tint: self.tint,
-            world: self.world
+            world: Similarity3::from_parts(
+                Translation3::new(
+                    self.world.isometry.translation.x,
+                    self.world.isometry.translation.y,
+                    self.world_z_index,
+                ),
+                UnitQuaternion::from_axis_angle(
+                    &Vector3::z_axis(),
+                    self.world.isometry.rotation.angle(),
+                ),
+                self.world.scaling(),
+            ),
         }
     }
 }
@@ -80,8 +96,10 @@ pub struct SpriteBuilder<S> {
     pub scale: Vector2<f32>,
     #[serde(default = "super::arr3_one")]
     pub tint: [f32; 3],
-    #[serde(default = "Similarity3::identity")]
-    pub world: Similarity3<f32>
+    #[serde(default = "Similarity2::identity")]
+    pub world: Similarity2<f32>,
+    #[serde(default)]
+    pub world_z_index: f32,
 }
 
 impl<S> SpriteBuilder<S> {
@@ -140,8 +158,14 @@ impl<S> SpriteBuilder<S> {
     }
 
     #[inline]
-    pub fn with_world(mut self, world: Similarity3<f32>) -> Self {
+    pub fn with_world(mut self, world: Similarity2<f32>) -> Self {
         self.world = world;
+        self
+    }
+
+    #[inline]
+    pub fn with_world_z_index(mut self, world_z_index: f32) -> Self {
+        self.world_z_index = world_z_index;
         self
     }
 }
@@ -185,7 +209,8 @@ impl SpriteBuilder<Strong> {
             size: self.size,
             scale: self.scale,
             tint: self.tint,
-            world: self.world
+            world: self.world,
+            world_z_index: self.world_z_index,
         }
     }
 }
@@ -211,7 +236,8 @@ impl<S> Default for SpriteBuilder<S> {
             size: super::vector2_one(),
             scale: super::vector2_one(),
             tint: super::arr3_one(),
-            world: Similarity3::identity()
+            world: Similarity2::identity(),
+            world_z_index: 0.0,
         }
     }
 }

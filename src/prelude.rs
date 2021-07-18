@@ -24,7 +24,7 @@ pub use crate::render::client::{
 pub use crate::render::curve::{LineCap, LineJoin, Path, PathBuilder, RawCurve, StrokeOptions};
 pub use crate::render::message::DrawnEvent;
 pub use crate::render::pipeline::{Pipeline, PipelineBuilder};
-pub use crate::render::text::{Font, RawText};
+pub use crate::render::text::{Font, RawText, VerticalAlignment, HorizontalAlignment};
 pub use crate::render::view::{FilterMode, Texture};
 pub use crate::render::RenderServer;
 pub use crate::sim::{

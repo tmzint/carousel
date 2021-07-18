@@ -9,7 +9,9 @@ use crate::render::view::FilterMode;
 use crate::util::{HashMap, OrderWindow};
 use ahash::AHasher;
 use copyless::VecHelper;
-use nalgebra::{Isometry3, Point2, Rotation2, UnitQuaternion, Vector3, Translation3, Similarity3};
+use nalgebra::{
+    Isometry3, Point2, Rotation2, Similarity2, Similarity3, Translation3, UnitQuaternion, Vector3,
+};
 use serde::Deserialize;
 use std::borrow::Cow;
 use std::collections::BTreeSet;
@@ -562,7 +564,8 @@ pub struct RawText<S> {
     pub horizontal_alignment: HorizontalAlignment,
     pub scale: f32,
     pub tint: [f32; 3],
-    pub world: Similarity3<f32>
+    pub world: Similarity2<f32>,
+    pub world_z_index: f32,
 }
 
 impl<S: Clone> RawText<S> {
@@ -582,7 +585,8 @@ impl<S: Clone> RawText<S> {
             horizontal_alignment: self.horizontal_alignment,
             scale: self.scale,
             tint: self.tint,
-            world: self.world
+            world: self.world,
+            world_z_index: self.world_z_index,
         }
     }
 
@@ -602,13 +606,25 @@ impl<S: Clone> RawText<S> {
                 Translation3::new(self.position.x, self.position.y, self.z_index),
                 UnitQuaternion::from_axis_angle(&Vector3::z_axis(), self.rotation.angle()),
             ),
+            // TODO: text requires correct scale but the scale factor of world isn't included here
             scale: Vector3::new(
                 self.scale,
                 self.point / font_layout_size,
                 font_layout_distance_range,
             ),
             tint: self.tint,
-            world: self.world
+            world: Similarity3::from_parts(
+                Translation3::new(
+                    self.world.isometry.translation.x,
+                    self.world.isometry.translation.y,
+                    self.world_z_index,
+                ),
+                UnitQuaternion::from_axis_angle(
+                    &Vector3::z_axis(),
+                    self.world.isometry.rotation.angle(),
+                ),
+                self.world.scaling(),
+            ),
         }
     }
 
@@ -621,7 +637,7 @@ impl<S: Clone> RawText<S> {
             .unwrap_or_else(|| f32::INFINITY)
             .to_ne_bytes()
             .hash(&mut hasher);
-        self.width
+        self.height
             .unwrap_or_else(|| f32::INFINITY)
             .to_ne_bytes()
             .hash(&mut hasher);

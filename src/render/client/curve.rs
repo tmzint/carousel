@@ -3,7 +3,7 @@ use crate::render::client::{CanvasLayer, LayerSpawner, RenderDefaults};
 use crate::render::curve::{Path, RawCurve, StrokeOptions};
 use crate::render::message::{CurveEvent, CurveEventKind};
 use crate::render::pipeline::Pipeline;
-use nalgebra::{Point2, Rotation2, Vector2, Similarity3};
+use nalgebra::{Point2, Rotation2, Similarity2, Vector2};
 use roundabout::prelude::MessageSender;
 use serde::Deserialize;
 use std::ops::{Deref, DerefMut};
@@ -28,8 +28,10 @@ pub struct CurveBuilder<S> {
     pub scale: Vector2<f32>,
     #[serde(default = "super::arr3_one")]
     pub tint: [f32; 3],
-    #[serde(default = "Similarity3::identity")]
-    pub world: Similarity3<f32>
+    #[serde(default = "Similarity2::identity")]
+    pub world: Similarity2<f32>,
+    #[serde(default)]
+    pub world_z_index: f32,
 }
 
 impl<S> CurveBuilder<S> {
@@ -82,8 +84,14 @@ impl<S> CurveBuilder<S> {
     }
 
     #[inline]
-    pub fn with_world(mut self, world: Similarity3<f32>) -> Self {
+    pub fn with_world(mut self, world: Similarity2<f32>) -> Self {
         self.world = world;
+        self
+    }
+
+    #[inline]
+    pub fn with_world_z_index(mut self, world_z_index: f32) -> Self {
+        self.world_z_index = world_z_index;
         self
     }
 }
@@ -114,7 +122,8 @@ impl CurveBuilder<Strong> {
             rotation: self.rotation,
             scale: self.scale,
             tint: self.tint,
-            world: self.world
+            world: self.world,
+            world_z_index: self.world_z_index,
         }
     }
 }
@@ -139,7 +148,8 @@ impl<S> Default for CurveBuilder<S> {
             rotation: Rotation2::identity(),
             scale: super::vector2_one(),
             tint: super::arr3_one(),
-            world: Similarity3::identity()
+            world: Similarity2::identity(),
+            world_z_index: 0.0,
         }
     }
 }
