@@ -252,13 +252,15 @@ impl Rectangle {
 impl Bounded for Rectangle {
     #[inline]
     fn bounds(&self) -> Bounds {
-        Bounds {
-            size: Vector2::new(self.size.x * self.scale.x, self.size.y * self.scale.y),
-            isometry: Isometry2::new(
-                Vector2::new(self.position.x, self.position.y),
-                self.rotation.angle(),
-            ),
-        }
+        let extends = Vector2::new(self.size.x * self.scale.x, self.size.y * self.scale.y);
+        let half_extends = extends / 2.0;
+        let model = self.world * Isometry2::new(self.position.coords, self.rotation.angle());
+
+        let o = model * Point2::from(half_extends);
+        let w = model * Point2::new(half_extends.x, -half_extends.y);
+        let h = model * Point2::new(-half_extends.x, half_extends.y);
+
+        Bounds { o, w, h }
     }
 }
 

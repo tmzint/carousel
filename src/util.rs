@@ -1,4 +1,4 @@
-use nalgebra::{Isometry2, Point2, Vector2};
+use nalgebra::Point2;
 use std::ops::{Deref, DerefMut};
 
 pub type HashMap<K, T> = std::collections::HashMap<K, T, ahash::RandomState>;
@@ -220,8 +220,9 @@ impl<T> DerefMut for Counted<T> {
 
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub struct Bounds {
-    pub size: Vector2<f32>,
-    pub isometry: Isometry2<f32>,
+    pub o: Point2<f32>,
+    pub w: Point2<f32>,
+    pub h: Point2<f32>,
 }
 
 pub trait Bounded {
@@ -229,14 +230,8 @@ pub trait Bounded {
 
     #[inline]
     fn contains(&self, point: Point2<f32>) -> bool {
-        let bounds = self.bounds();
-        let half_extends = bounds.size / 2.0;
-
-        let point = bounds.isometry.inverse() * point;
         // see https://math.stackexchange.com/questions/1805724/detect-if-point-is-within-rotated-rectangles-bounds
-        let o = half_extends;
-        let w = Vector2::new(half_extends.x, -half_extends.y);
-        let h = Vector2::new(-half_extends.x, half_extends.y);
+        let Bounds { o, w, h } = self.bounds();
 
         let mut xu = w.x - o.x;
         let mut yu = w.y - o.y;
