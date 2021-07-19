@@ -609,7 +609,7 @@ impl<S: Clone> RawText<S> {
             // TODO: text requires correct scale but the scale factor of world isn't included here
             scale: Vector3::new(
                 self.scale,
-                self.point / font_layout_size,
+                self.point / (font_layout_size + font_layout_distance_range),
                 font_layout_distance_range,
             ),
             tint: self.tint,

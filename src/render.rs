@@ -407,6 +407,9 @@ fn on_pipeline_asset_event(
         AssetEventKind::Load => {
             let assets = state.assets.as_mut().unwrap();
             if let Some(pipeline) = assets.client().try_get(&event.id) {
+                renderer
+                    .canvasses
+                    .update_pipeline_priority(&event.id, pipeline.priority);
                 if !renderer
                     .pipelines
                     .upsert_pipeline(&renderer.device, event.id, pipeline)
@@ -517,18 +520,32 @@ fn on_instance_event(
 
     match &event.kind {
         InstanceEventKind::Created(raw_instance) => {
+            let priority = renderer
+                .pipelines
+                .get_pipeline(&raw_instance.pipeline)
+                .map(|p| p.pipeline.priority)
+                .unwrap_or_default();
+
             renderer.canvasses.upsert_instance(
                 &renderer.device,
                 &event.layer,
                 event.id,
+                priority,
                 *raw_instance.deref(),
             );
         }
         InstanceEventKind::Modified(raw_instance) => {
+            let priority = renderer
+                .pipelines
+                .get_pipeline(&raw_instance.pipeline)
+                .map(|p| p.pipeline.priority)
+                .unwrap_or_default();
+
             renderer.canvasses.upsert_instance(
                 &renderer.device,
                 &event.layer,
                 event.id,
+                priority,
                 *raw_instance.deref(),
             );
         }
@@ -572,10 +589,17 @@ fn on_font_layout_asset_event(
                         )
                         .expect("upsert text");
 
+                    let priority = renderer
+                        .pipelines
+                        .get_pipeline(&raw_instance.pipeline)
+                        .map(|p| p.pipeline.priority)
+                        .unwrap_or_default();
+
                     renderer.canvasses.upsert_instance(
                         &renderer.device,
                         &canvas_layer_id,
                         text_id,
+                        priority,
                         raw_instance,
                     );
                 }
@@ -618,10 +642,17 @@ fn on_font_asset_event(
                         )
                         .expect("upsert text");
 
+                    let priority = renderer
+                        .pipelines
+                        .get_pipeline(&instance.pipeline)
+                        .map(|p| p.pipeline.priority)
+                        .unwrap_or_default();
+
                     renderer.canvasses.upsert_instance(
                         &renderer.device,
                         &canvas_layer_id,
                         text_id,
+                        priority,
                         instance,
                     );
                 }
@@ -651,10 +682,17 @@ fn on_text_event(state: &mut RenderServer, _context: &mut RuntimeContext, event:
                     .texts
                     .minor_update_text(event.layer, &event.id, raw.deref().to_owned())
             {
+                let priority = renderer
+                    .pipelines
+                    .get_pipeline(&raw_instance.pipeline)
+                    .map(|p| p.pipeline.priority)
+                    .unwrap_or_default();
+
                 renderer.canvasses.upsert_instance(
                     &renderer.device,
                     &event.layer,
                     event.id,
+                    priority,
                     raw_instance,
                 );
             }
@@ -686,9 +724,19 @@ fn on_text_event(state: &mut RenderServer, _context: &mut RuntimeContext, event:
             )
             .expect("upsert text");
 
-        renderer
-            .canvasses
-            .upsert_instance(&renderer.device, &event.layer, event.id, raw_instance);
+        let priority = renderer
+            .pipelines
+            .get_pipeline(&raw_instance.pipeline)
+            .map(|p| p.pipeline.priority)
+            .unwrap_or_default();
+
+        renderer.canvasses.upsert_instance(
+            &renderer.device,
+            &event.layer,
+            event.id,
+            priority,
+            raw_instance,
+        );
     } else {
         renderer.texts.queue_text(
             event.layer,
@@ -720,10 +768,17 @@ fn on_curve_event(state: &mut RenderServer, _context: &mut RuntimeContext, event
                     .curves
                     .minor_update_curve(event.layer, &event.id, raw.deref().to_owned())
             {
+                let priority = renderer
+                    .pipelines
+                    .get_pipeline(&raw_instance.pipeline)
+                    .map(|p| p.pipeline.priority)
+                    .unwrap_or_default();
+
                 renderer.canvasses.upsert_instance(
                     &renderer.device,
                     &event.layer,
                     event.id,
+                    priority,
                     raw_instance,
                 );
             }
@@ -738,14 +793,25 @@ fn on_curve_event(state: &mut RenderServer, _context: &mut RuntimeContext, event
     };
 
     let assets = state.assets.as_ref().unwrap().client();
+
     let raw_instance = renderer
         .curves
         .upsert_curve(&assets, event.layer, event.id, raw_curve.deref().to_owned())
         .expect("upsert curve");
 
-    renderer
-        .canvasses
-        .upsert_instance(&renderer.device, &event.layer, event.id, raw_instance);
+    let priority = renderer
+        .pipelines
+        .get_pipeline(&raw_instance.pipeline)
+        .map(|p| p.pipeline.priority)
+        .unwrap_or_default();
+
+    renderer.canvasses.upsert_instance(
+        &renderer.device,
+        &event.layer,
+        event.id,
+        priority,
+        raw_instance,
+    );
 }
 
 fn on_frame_requested_event(

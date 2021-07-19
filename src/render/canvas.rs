@@ -7,7 +7,7 @@ use crate::render::view::{RealizedView, Texture, Textures};
 use crate::render::Samples;
 use crate::some_or_continue;
 use crate::util::{Counted, HashMap, IndexMap};
-use nalgebra::{Isometry3, Vector2, Vector3, Similarity3};
+use nalgebra::{Isometry3, Similarity3, Vector2, Vector3};
 use std::collections::btree_map::Entry;
 use std::collections::BTreeMap;
 use std::marker::PhantomData;
@@ -23,7 +23,7 @@ pub struct RawInstance<S> {
     pub model: Isometry3<f32>,
     pub scale: Vector3<f32>,
     pub tint: [f32; 3],
-    pub world: Similarity3<f32>
+    pub world: Similarity3<f32>,
 }
 
 impl<S> RawInstance<S> {
@@ -36,7 +36,7 @@ impl<S> RawInstance<S> {
             model: self.model,
             scale: self.scale,
             tint: self.tint,
-            world: self.world
+            world: self.world,
         }
     }
 }
@@ -44,12 +44,14 @@ impl<S> RawInstance<S> {
 #[derive(Debug)]
 struct InstanceEntry {
     raw: RawInstance<Weak>,
+    priority: usize,
     buffer_index: u64,
     buffer_offset: usize,
 }
 
 #[derive(Debug, Clone, Hash, Eq, PartialEq, Ord, PartialOrd)]
 struct RenderKey {
+    priority: usize,
     pipeline: WeakAssetId<Pipeline>,
     mesh: WeakAssetId<Mesh>,
     texture: WeakAssetId<Texture>,
@@ -100,10 +102,42 @@ impl RealizedCanvasLayer {
         }
     }
 
+    pub fn update_pipeline_priority(&mut self, pipeline: &WeakAssetId<Pipeline>, priority: usize) {
+        // Optimization: don't iterate over all instances
+
+        for (_key, entry) in &mut self.instance_index {
+            if !(entry.raw.pipeline.is_same_asset(pipeline) && entry.priority != priority) {
+                continue;
+            }
+
+            let prev = some_or_continue!(self.render_index.remove(&RenderKey {
+                priority: entry.priority,
+                pipeline: entry.raw.pipeline,
+                mesh: entry.raw.mesh,
+                texture: entry.raw.texture,
+                buffer_index: entry.buffer_index,
+            }));
+
+            self.render_index.insert(
+                RenderKey {
+                    priority,
+                    pipeline: entry.raw.pipeline,
+                    mesh: entry.raw.mesh,
+                    texture: entry.raw.texture,
+                    buffer_index: entry.buffer_index,
+                },
+                prev,
+            );
+
+            entry.priority = priority;
+        }
+    }
+
     pub fn upsert_instance(
         &mut self,
         device: &wgpu::Device,
         instance_id: Uuid,
+        priority: usize,
         raw: RawInstance<Weak>,
     ) {
         // Optimization: batching
@@ -112,6 +146,7 @@ impl RealizedCanvasLayer {
         self.buffer_counter += 1;
         let instance_entry = InstanceEntry {
             raw,
+            priority,
             buffer_index,
             buffer_offset: 0,
         };
@@ -136,6 +171,7 @@ impl RealizedCanvasLayer {
                 let prev = std::mem::replace(current, instance_entry);
 
                 self.render_index.remove(&RenderKey {
+                    priority: prev.priority,
                     pipeline: prev.raw.pipeline,
                     mesh: prev.raw.mesh,
                     texture: prev.raw.texture,
@@ -164,6 +200,7 @@ impl RealizedCanvasLayer {
             instances: vec![instance_id],
         };
         let render_key = RenderKey {
+            priority,
             pipeline: raw.pipeline,
             mesh: raw.mesh,
             texture: raw.texture,
@@ -175,6 +212,7 @@ impl RealizedCanvasLayer {
     pub fn remove_instance(&mut self, instance_id: &Uuid) {
         if let Some(instance) = self.instance_index.remove(instance_id) {
             self.render_index.remove(&RenderKey {
+                priority: instance.priority,
                 pipeline: instance.raw.pipeline,
                 mesh: instance.raw.mesh,
                 texture: instance.raw.texture,
@@ -521,16 +559,23 @@ impl Canvasses {
         self.swap_chain_size = size;
     }
 
+    pub fn update_pipeline_priority(&mut self, pipeline: &WeakAssetId<Pipeline>, priority: usize) {
+        for (_, layer) in &mut self.layers {
+            layer.update_pipeline_priority(pipeline, priority);
+        }
+    }
+
     pub fn upsert_instance(
         &mut self,
         device: &wgpu::Device,
         layer_id: &Uuid,
         instance_id: Uuid,
+        priority: usize,
         raw: RawInstance<Weak>,
     ) {
         if let Some(layer) = self.layers.get_mut(layer_id) {
             log::debug!("upsert instance: {:?}", instance_id);
-            layer.upsert_instance(device, instance_id, raw);
+            layer.upsert_instance(device, instance_id, priority, raw);
         }
     }
 

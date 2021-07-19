@@ -1,3 +1,11 @@
+// see:
+//  https://github.com/VALIS-software/GPUText
+//  https://github.com/Chlumsky/msdfgen
+//  https://github.com/Chlumsky/msdfgen/issues/36#issuecomment-429240110
+//  https://github.com/Chlumsky/msdfgen/issues/115
+//  https://stackoverflow.com/questions/34563475/sdf-text-rendering-in-perspective-projection
+//  https://metalbyexample.com/rendering-text-in-metal-with-signed-distance-fields/
+
 [[block]]
 struct Uniforms {
     // Optimization: multiply on cpu
@@ -50,7 +58,7 @@ fn main(
     // Optimization: merge view and model
     out.position = uniforms.camera_proj * (uniforms.camera_view * (model * vec4<f32>(scaled, 1.0)));
 
-    out.distance_factor = input.scale.y * input.scale.x * uniforms.px_range_factor * input.scale.z;
+    out.distance_factor = max(input.scale.y * input.scale.x * uniforms.px_range_factor * input.scale.z, 1.0);
 
     return out;
 }
@@ -76,11 +84,11 @@ fn main(input: VertexOutput) -> FragmentOutput {
 
     var msd: vec3<f32> = textureSample(t_diffuse, s_diffuse, input.tex_coords, input.texture_layer).rgb;
     var sd: f32 = input.distance_factor * (median(msd.r, msd.g, msd.b) - 0.5);
-    var alpha: f32 = clamp(sd + 0.5, 0.0, 1.0);
-    if (alpha < 0.0001) {
+    var fill_alpha: f32 = clamp(sd + 0.5, 0.0, 1.0);
+    if (fill_alpha < 0.0001) {
         discard;
     }
-    out.color = vec4<f32>(input.tint.rgb, alpha);
+    out.color = vec4<f32>(input.tint.rgb, fill_alpha);
 
     return out;
 }
