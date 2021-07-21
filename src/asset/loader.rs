@@ -7,7 +7,7 @@ use internment::Intern;
 use relative_path::RelativePath;
 use relative_path::RelativePathBuf;
 use serde::de::DeserializeOwned;
-use serde::{Deserialize, Deserializer};
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::cell::RefCell;
 use std::marker::PhantomData;
 use std::ops::Deref;
@@ -135,6 +135,15 @@ impl<'de, T: Send + Sync + 'static> Deserialize<'de> for AssetId<T, Strong> {
                 )),
             }
         })
+    }
+}
+
+impl<T: Send + Sync + 'static, TS> Serialize for AssetId<T, TS> {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        serializer.serialize_str(&self.untyped.uri.to_string())
     }
 }
 
