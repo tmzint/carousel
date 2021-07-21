@@ -19,7 +19,8 @@ use internment::Intern;
 use parking_lot::Mutex;
 use relative_path::{RelativePath, RelativePathBuf};
 use roundabout::prelude::*;
-use serde::de::DeserializeOwned;
+use serde::de::{DeserializeOwned, Visitor};
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::any::{Any, TypeId};
 use std::cmp::Ordering;
 use std::convert::{TryFrom, TryInto};
@@ -187,6 +188,44 @@ impl Display for AssetPath {
         f.write_str(self.kind.protocol())?;
         f.write_str("://")?;
         f.write_str(self.path.deref().as_str())
+    }
+}
+
+struct AssetPathVisitor;
+
+impl<'de> Visitor<'de> for AssetPathVisitor {
+    type Value = AssetPath;
+
+    #[inline]
+    fn expecting(&self, formatter: &mut Formatter) -> std::fmt::Result {
+        formatter.write_str("asset path uri string")
+    }
+
+    #[inline]
+    fn visit_str<E>(self, v: &str) -> Result<Self::Value, E>
+    where
+        E: serde::de::Error,
+    {
+        AssetPath::from_uri(v).map_err(serde::de::Error::custom)
+    }
+}
+
+impl<'de> Deserialize<'de> for AssetPath {
+    #[inline]
+    fn deserialize<D>(deserializer: D) -> Result<AssetPath, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        deserializer.deserialize_string(AssetPathVisitor)
+    }
+}
+
+impl Serialize for AssetPath {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        serializer.serialize_str(&self.to_string())
     }
 }
 
@@ -533,8 +572,8 @@ impl AssetServerBuilder {
             .on(on_init_event)
             .on(on_store_asset_event)
             .on(on_sync_asset_event)
-            .on(on_timed_gc_assets_event)
-            .on(on_timed_notify_assets_event)
+            .on(on_gc_assets_event)
+            .on(on_notify_assets_event)
             .init_fn(move |context| AssetServer {
                 loaders,
                 assets: Assets {
@@ -767,7 +806,7 @@ fn on_sync_asset_event(
     unsafe { state.assets.extend(state.sync_queue_asset.drain(..)) };
 }
 
-fn on_timed_gc_assets_event(
+fn on_gc_assets_event(
     state: &mut AssetServer,
     context: &mut RuntimeContext,
     _event: &GcAssetsEvent,
@@ -777,7 +816,7 @@ fn on_timed_gc_assets_event(
     TimeServer::schedule(state.gc_schedule, GcAssetsEvent, context.sender());
 }
 
-fn on_timed_notify_assets_event(
+fn on_notify_assets_event(
     state: &mut AssetServer,
     context: &mut RuntimeContext,
     _event: &NotifyAssetsEvent,

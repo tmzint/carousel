@@ -1,15 +1,15 @@
 use crate::asset::storage::{Assets, AssetsClient};
 use crate::asset::{
-    AssetId, AssetIdKind, AssetPath, Loaded, Strong, StrongAssetId, Weak, WeakAssetId,
+    AssetId, AssetIdKind, AssetPath, AssetPathVisitor, Loaded, Strong, StrongAssetId, Weak,
+    WeakAssetId,
 };
 use crate::util::IndexMap;
 use internment::Intern;
 use relative_path::RelativePath;
 use relative_path::RelativePathBuf;
-use serde::de::{DeserializeOwned, Visitor};
+use serde::de::DeserializeOwned;
 use serde::{Deserialize, Deserializer};
 use std::cell::RefCell;
-use std::fmt::Formatter;
 use std::marker::PhantomData;
 use std::ops::Deref;
 use std::path::Path;
@@ -100,41 +100,14 @@ impl<T> Default for SerdeAssetLoader<T> {
     }
 }
 
-struct AssetIdVisitor<T>(PhantomData<T>);
-
-impl<'de, T: 'static> Visitor<'de> for AssetIdVisitor<T> {
-    type Value = WeakAssetId<T>;
-
-    #[inline]
-    fn expecting(&self, formatter: &mut Formatter) -> std::fmt::Result {
-        formatter.write_str("relative path string")
-    }
-
-    #[inline]
-    fn visit_str<E>(self, v: &str) -> Result<Self::Value, E>
-    where
-        E: serde::de::Error,
-    {
-        self.visit_string(v.to_owned())
-    }
-
-    #[inline]
-    fn visit_string<E>(self, v: String) -> Result<Self::Value, E>
-    where
-        E: serde::de::Error,
-    {
-        let path = AssetPath::from_uri(v).map_err(serde::de::Error::custom)?;
-        Ok(WeakAssetId::new(AssetIdKind::AssetPath(path)))
-    }
-}
-
 impl<'de, T: Send + Sync + 'static> Deserialize<'de> for AssetId<T, Weak> {
     #[inline]
     fn deserialize<D>(deserializer: D) -> Result<WeakAssetId<T>, D::Error>
     where
         D: Deserializer<'de>,
     {
-        deserializer.deserialize_string(AssetIdVisitor(Default::default()))
+        let path = deserializer.deserialize_string(AssetPathVisitor)?;
+        Ok(WeakAssetId::new(AssetIdKind::AssetPath(path)))
     }
 }
 
@@ -146,8 +119,10 @@ impl<'de, T: Send + Sync + 'static> Deserialize<'de> for AssetId<T, Strong> {
     {
         // TODO: also allow inlined assets  -> name + data for T => insert into Assets (check deadlocks)
         //  How? the api expects Vec<u8>
-        let weak: WeakAssetId<T> =
-            deserializer.deserialize_string(AssetIdVisitor(Default::default()))?;
+
+        let path = deserializer.deserialize_string(AssetPathVisitor)?;
+        let weak: WeakAssetId<T> = WeakAssetId::new(AssetIdKind::AssetPath(path));
+
         SERDE_THREAD_LOCAL.with(|maybe_tls| {
             let borrow_maybe_tls = maybe_tls.borrow();
             match borrow_maybe_tls.deref() {
