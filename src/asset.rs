@@ -14,7 +14,7 @@ use crate::render::view::{ImageLoader, Texture};
 use crate::time::TimeServer;
 use crate::util::HashMap;
 use crate::InitEvent;
-use crate::{ok_or_continue, some_or_break};
+use crate::{some_or_break, some_or_continue};
 use internment::Intern;
 use parking_lot::Mutex;
 use relative_path::{RelativePath, RelativePathBuf};
@@ -33,10 +33,6 @@ use std::time::Duration;
 use uuid::Uuid;
 
 // TODO: mutable vs immutable assets (user)
-//  2. add user dir to config // rename assets dir to system dir
-//  3. add dir resolution for assets loading
-//  4. add user load
-//  5. add user hot reloading
 //  6. add save for UserAssets // errors? via events -> add load errors as well? -> typed?
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
@@ -124,6 +120,11 @@ pub struct AssetPath {
 }
 
 impl AssetPath {
+    #[inline]
+    pub fn new(kind: AssetPathKind, path: Intern<RelativePathBuf>) -> Self {
+        Self { kind, path }
+    }
+
     #[inline]
     pub fn kind(&self) -> AssetPathKind {
         self.kind
@@ -535,11 +536,13 @@ impl AssetServerBuilder {
             .on(on_timed_gc_assets_event)
             .on(on_timed_notify_assets_event)
             .init_fn(move |context| AssetServer {
-                asset_dir: Default::default(),
                 loaders,
                 assets: Assets {
                     inner: Arc::new(Default::default()),
                     sender: context.sender().clone(),
+                    // TODO: why don't we init the asset server sys / usr dirs with the builder?
+                    sys_dir: Default::default(),
+                    usr_dir: Default::default(),
                 },
                 sync: 0,
                 sync_requested: 0,
@@ -560,7 +563,7 @@ impl AssetServerBuilder {
                     .kind
                     .asset_path()
                     .ok_or_else(|| anyhow::anyhow!("asset path to load not found"))?;
-                let asset = loader.load(ap, &rp, a)?;
+                let asset = loader.load(ap, rp.path.deref(), a)?;
                 let typed_id: WeakAssetId<T::Asset> = WeakAssetId::from_untyped(id);
 
                 let loaded_event = es.sender().prepare(AssetEvent {
@@ -599,7 +602,6 @@ pub(crate) struct SyncQueueEntry {
 }
 
 pub struct AssetServer {
-    asset_dir: PathBuf,
     loaders: HashMap<TypeId, UntypedLoader>,
     assets: Assets,
     sync: u64,
@@ -638,19 +640,35 @@ impl AssetServer {
 }
 
 fn on_init_event(state: &mut AssetServer, context: &mut RuntimeContext, event: &InitEvent) {
-    state.asset_dir = event.asset_dir.clone();
+    state.assets.sys_dir = event.sys_dir.clone();
+    state.assets.usr_dir = event.usr_dir.clone();
     log::info!("assets created");
     context.sender().send(AssetsCreatedEvent {
         inner: state.assets.inner.clone(),
+        sys_dir: state.assets.sys_dir.clone(),
+        usr_dir: state.assets.usr_dir.clone(),
     });
 
     TimeServer::schedule(state.gc_schedule, GcAssetsEvent, context.sender());
 
     if let Some(notify) = &mut state.notify {
         log::info!("start watching assets for changes");
-        notify
-            .watch(&state.asset_dir)
-            .expect("watchable asset dir for hot reloading");
+        if let Err(e) = notify.watch(&state.assets.sys_dir) {
+            log::warn!(
+                "could not watch sys asset dir {}: {}",
+                state.assets.sys_dir.display(),
+                e
+            )
+        }
+
+        if let Err(e) = notify.watch(&state.assets.usr_dir) {
+            log::warn!(
+                "could not watch usr asset dir {}: {}",
+                state.assets.sys_dir.display(),
+                e
+            )
+        }
+
         TimeServer::schedule(
             Duration::from_millis(500),
             NotifyAssetsEvent,
@@ -670,17 +688,23 @@ fn on_load_asset_event<T: 'static + Send + Sync>(
                 return;
             }
 
+            let asset_dir = if let Some(asset_path) = event.id.kind().asset_path() {
+                state.assets.asset_dir(&asset_path.kind)
+            } else {
+                log::error!(
+                    "Can't load asset without an asset path {}",
+                    event.id.untyped.kind
+                );
+                return;
+            };
+
             let sync_queue_entry =
-                match (loader)(&state.asset_dir, event.id.untyped, &state.assets, context) {
+                match (loader)(asset_dir, event.id.untyped, &state.assets, context) {
                     Ok(ok) => ok,
                     Err(e) => {
                         // TODO: panic? -> this is probably required for LoadedAssetTables otherwise how to fail the loading?
                         //  -> dependency registration?
-                        log::error!(
-                            "Could not load asset {:?}: {}",
-                            event.id.untyped.kind.asset_path(),
-                            e
-                        );
+                        log::error!("Could not load asset {}: {}", event.id.untyped.kind, e);
                         return;
                     }
                 };
@@ -759,21 +783,27 @@ fn on_timed_notify_assets_event(
     _event: &NotifyAssetsEvent,
 ) {
     log::debug!("start checking asset changes");
-    let asset_dir = &state.asset_dir;
+
     let mut changed_assets: Vec<UntypedAssetId> = Vec::default();
     for changed in state.notify.as_mut().unwrap().changes_iter() {
-        let mut relative_path_string = ok_or_continue!(changed.path.strip_prefix(asset_dir));
+        let assets = &state.assets;
+        let mut asset_path = some_or_continue!(assets.asset_path(&changed.path));
+        let asset_dir = assets.asset_dir(&asset_path.kind);
         loop {
-            if let Some(relative_path_string) = relative_path_string.to_str() {
-                let path = Intern::new(RelativePath::new(relative_path_string).to_owned());
-                changed_assets.extend(state.assets.asset_ids_for_path(path).drain(..));
-            }
+            changed_assets.extend(assets.asset_ids_for_path(asset_path).drain(..));
             // we check if any parent folder is an asset
-            relative_path_string = some_or_break!(relative_path_string.parent());
+            asset_path = some_or_break!(asset_path
+                .path
+                .parent()
+                .and_then(|p| assets.asset_path(&p.to_path(asset_dir))));
         }
     }
 
     for asset_id in changed_assets {
+        let asset_dir = state
+            .assets
+            .asset_dir(&asset_id.kind.asset_path().unwrap().kind);
+
         let loader = state
             .loaders
             .get_mut(&asset_id.tid)
@@ -807,6 +837,8 @@ fn on_timed_notify_assets_event(
 
 pub struct AssetsCreatedEvent {
     inner: Arc<InnerAssets>,
+    sys_dir: PathBuf,
+    usr_dir: PathBuf,
 }
 
 impl AssetsCreatedEvent {
@@ -815,6 +847,8 @@ impl AssetsCreatedEvent {
         Assets {
             inner: self.inner.clone(),
             sender,
+            sys_dir: self.sys_dir.clone(),
+            usr_dir: self.usr_dir.clone(),
         }
     }
 }

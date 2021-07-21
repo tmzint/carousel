@@ -1,4 +1,0 @@
-{
-  "eager": ["recursive/child1.json", "recursive/child2.json"],
-  "lazy": ["recursive/child2.json", "recursive/child3.json"]
-}

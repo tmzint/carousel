@@ -20,10 +20,16 @@ fn main() -> anyhow::Result<()> {
             let resource_init = SimResource::init_fn(&mut g);
             SimServer::builder(g, resource_init).init_fn(State::new)
         })
-        .finish_main_group(|g| PlatformServer::new("display.json", "actions.json", g));
+        .finish_main_group(|g| {
+            PlatformServer::new(
+                AssetPath::sys("display.json"),
+                AssetPath::sys("actions.json"),
+                g,
+            )
+        });
 
     Engine::builder()?
-        .with_asset_path("examples/serpent/assets/")
+        .with_sys_path("examples/serpent/sys/")
         .with_runtime(runtime)
         .finish()
         .start()

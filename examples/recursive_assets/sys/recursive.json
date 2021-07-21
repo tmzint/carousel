@@ -1,0 +1,4 @@
+{
+  "eager": ["sys://recursive/child1.json", "sys://recursive/child2.json"],
+  "lazy": ["sys://recursive/child2.json", "sys://recursive/child3.json"]
+}

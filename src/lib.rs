@@ -17,12 +17,14 @@ mod util;
 pub struct InitEvent {
     pub start: Instant,
     pub dir: PathBuf,
-    pub asset_dir: PathBuf,
+    pub sys_dir: PathBuf,
+    pub usr_dir: PathBuf,
 }
 
 pub struct EngineBuilder {
     dir: PathBuf,
-    asset_path: RelativePathBuf,
+    sys_path: RelativePathBuf,
+    usr_path: RelativePathBuf,
     runtime: Runtime,
 }
 
@@ -32,7 +34,8 @@ impl EngineBuilder {
 
         Ok(EngineBuilder {
             dir: current_dir,
-            asset_path: RelativePath::new("assets/").to_owned(),
+            sys_path: RelativePath::new("sys/").to_owned(),
+            usr_path: RelativePath::new("usr/").to_owned(),
             runtime: Runtime::builder(4_194_304).finish(),
         })
     }
@@ -42,8 +45,13 @@ impl EngineBuilder {
         self
     }
 
-    pub fn with_asset_path<T: Into<RelativePathBuf>>(mut self, asset_path: T) -> Self {
-        self.asset_path = asset_path.into();
+    pub fn with_sys_path<T: Into<RelativePathBuf>>(mut self, sys_path: T) -> Self {
+        self.sys_path = sys_path.into();
+        self
+    }
+
+    pub fn with_usr_path<T: Into<RelativePathBuf>>(mut self, usr_path: T) -> Self {
+        self.usr_path = usr_path.into();
         self
     }
 
@@ -53,11 +61,14 @@ impl EngineBuilder {
     }
 
     pub fn finish(self) -> Engine {
-        let asset_dir = self.asset_path.to_path(&self.dir);
+        let sys_dir = self.sys_path.to_path(&self.dir);
+        let usr_dir = self.usr_path.to_path(&self.dir);
+
         let init = InitEvent {
             start: Instant::now(),
             dir: self.dir,
-            asset_dir,
+            sys_dir,
+            usr_dir,
         };
 
         Engine {

@@ -1,9 +1,9 @@
 // TODO: rework public access
-pub use crate::asset::loader::{AssetLoader, StrongAssetTable, WeakAssetTable, LoadedAssetTable};
+pub use crate::asset::loader::{AssetLoader, LoadedAssetTable, StrongAssetTable, WeakAssetTable};
 pub use crate::asset::storage::{Assets, AssetsClient};
 pub use crate::asset::{
-    AssetEvent, AssetEventKind, AssetServer, AssetsCreatedEvent, LoadAssetEvent, StrongAssetId, LoadedAssetId,
-    WeakAssetId,
+    AssetEvent, AssetEventKind, AssetPath, AssetPathKind, AssetPathParam, AssetServer,
+    AssetsCreatedEvent, LoadAssetEvent, LoadedAssetId, StrongAssetId, WeakAssetId,
 };
 pub use crate::platform::action::{ActionState, ActionTrigger, ActionsConfig};
 pub use crate::platform::input::{MouseButton, PointerKind, ScrollDirection};
@@ -24,7 +24,7 @@ pub use crate::render::client::{
 pub use crate::render::curve::{LineCap, LineJoin, Path, PathBuilder, RawCurve, StrokeOptions};
 pub use crate::render::message::DrawnEvent;
 pub use crate::render::pipeline::{Pipeline, PipelineBuilder};
-pub use crate::render::text::{Font, RawText, VerticalAlignment, HorizontalAlignment};
+pub use crate::render::text::{Font, HorizontalAlignment, RawText, VerticalAlignment};
 pub use crate::render::view::{FilterMode, Texture};
 pub use crate::render::RenderServer;
 pub use crate::sim::{

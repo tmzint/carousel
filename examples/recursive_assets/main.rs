@@ -27,10 +27,12 @@ fn main() -> anyhow::Result<()> {
                 State::from(setup_builder.init_finish(resources, SetupState).unwrap())
             })
         })
-        .finish_main_group(|g| PlatformServer::new("display.json", ActionsConfig::default(), g));
+        .finish_main_group(|g| {
+            PlatformServer::new(AssetPath::sys("display.json"), ActionsConfig::default(), g)
+        });
 
     Engine::builder()?
-        .with_asset_path("examples/recursive_assets/assets/")
+        .with_sys_path("examples/recursive_assets/sys/")
         .with_runtime(runtime)
         .finish()
         .start()
@@ -87,8 +89,8 @@ impl SetupState {
     ) -> StateInstruction<State> {
         let assets = resources.assets.client();
 
-        let asset = assets.load("recursive.json");
-        let table = assets.load("recursive");
+        let asset = assets.load(AssetPath::sys("recursive.json"));
+        let table = assets.load(AssetPath::sys("recursive"));
 
         let loading = LoadingState { asset, table };
         let loading_builder = resources.resource.loading_builder.clone();

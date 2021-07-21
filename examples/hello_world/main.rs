@@ -21,10 +21,16 @@ fn main() -> anyhow::Result<()> {
                 State::from(setup_builder.init_finish(resources, SetupState).unwrap())
             })
         })
-        .finish_main_group(|g| PlatformServer::new("display.json", "actions.json", g));
+        .finish_main_group(|g| {
+            PlatformServer::new(
+                AssetPath::sys("display.json"),
+                AssetPath::sys("actions.json"),
+                g,
+            )
+        });
 
     Engine::builder()?
-        .with_asset_path("examples/hello_world/assets/")
+        .with_sys_path("examples/hello_world/sys/")
         .with_runtime(runtime)
         .finish()
         .start()
@@ -89,7 +95,7 @@ impl SetupState {
         let sprite = main_layer.spawn(
             Sprite::builder()
                 .with_size(Vector2::new(128.0, 128.0))
-                .with_texture(assets.load("hello_world.json")),
+                .with_texture(assets.load(AssetPath::sys("hello_world.json"))),
         );
 
         let ui_camera = render.camera(camera_rect, camera_eye);

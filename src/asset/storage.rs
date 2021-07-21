@@ -1,15 +1,16 @@
 use crate::asset::{
-    AssetId, AssetIdKind, AssetPath, LoadAssetEvent, Loaded, StoreAssetEvent, StrongAssetId,
-    SyncQueueEntry, UntypedAsset, UntypedAssetId, WeakAssetId,
+    AssetId, AssetIdKind, AssetPath, AssetPathKind, LoadAssetEvent, Loaded, StoreAssetEvent,
+    StrongAssetId, SyncQueueEntry, UntypedAsset, UntypedAssetId, WeakAssetId,
 };
 use crate::prelude::LoadedAssetId;
 use crate::util::{HashMap, IndexMap, OrderWindow};
 use internment::Intern;
 use parking_lot::{RwLock, RwLockReadGuard};
-use relative_path::RelativePathBuf;
+use relative_path::RelativePath;
 use roundabout::prelude::{MessageSender, UntypedMessage};
 use std::borrow::Borrow;
 use std::collections::BTreeSet;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 #[derive(Default)]
@@ -18,7 +19,7 @@ pub(crate) struct InnerAssets {
     // Optimization: use a smaller key / pre computed hash
     underlying: RwLock<HashMap<UntypedAssetId, UntypedAsset>>,
     counters: RwLock<IndexMap<UntypedAssetId, Arc<()>>>,
-    path_id_index: RwLock<BTreeSet<(Intern<RelativePathBuf>, OrderWindow<UntypedAssetId>)>>,
+    path_id_index: RwLock<BTreeSet<(AssetPath, OrderWindow<UntypedAssetId>)>>,
     unloaded_events: RwLock<HashMap<UntypedAssetId, UntypedMessage>>,
 }
 
@@ -26,9 +27,63 @@ pub(crate) struct InnerAssets {
 pub struct Assets {
     pub(crate) inner: Arc<InnerAssets>,
     pub(crate) sender: MessageSender,
+    pub(crate) sys_dir: PathBuf,
+    pub(crate) usr_dir: PathBuf,
 }
 
 impl Assets {
+    #[inline]
+    pub fn sys_dir(&self) -> &Path {
+        &self.sys_dir
+    }
+
+    #[inline]
+    pub fn usr_dir(&self) -> &Path {
+        &self.usr_dir
+    }
+
+    #[inline]
+    pub fn asset_dir(&self, kind: &AssetPathKind) -> &Path {
+        match kind {
+            AssetPathKind::Sys => &self.sys_dir,
+            AssetPathKind::Usr => &self.usr_dir,
+        }
+    }
+
+    #[inline]
+    pub fn asset_path_kind(&self, path: &Path) -> Option<AssetPathKind> {
+        if path.starts_with(&self.sys_dir) {
+            return Some(AssetPathKind::Sys);
+        }
+
+        if path.starts_with(&self.usr_dir) {
+            return Some(AssetPathKind::Usr);
+        }
+
+        None
+    }
+
+    #[inline]
+    pub fn asset_path(&self, path: &Path) -> Option<AssetPath> {
+        path.strip_prefix(&self.sys_dir)
+            .ok()
+            .map(|p| (AssetPathKind::Sys, p))
+            .or_else(|| {
+                path.strip_prefix(&self.usr_dir)
+                    .map(|p| (AssetPathKind::Usr, p))
+                    .ok()
+            })
+            .and_then(|(kind, relative_path_string)| {
+                if let Some(relative_path_string) = relative_path_string.to_str() {
+                    let path = Intern::new(RelativePath::new(relative_path_string).to_owned());
+                    let asset_path = AssetPath::new(kind, path);
+                    Some(asset_path)
+                } else {
+                    None
+                }
+            })
+    }
+
     #[inline]
     pub fn client(&self) -> AssetsClient {
         AssetsClient {
@@ -60,7 +115,7 @@ impl Assets {
                 underlying.insert(entry.asset_id, entry.asset);
 
                 if let Some(asset_path) = entry.asset_id.kind.asset_path() {
-                    path_id_index.insert((asset_path.path(), OrderWindow::new(entry.asset_id)));
+                    path_id_index.insert((asset_path, OrderWindow::new(entry.asset_id)));
                 }
                 if let Some(loaded_event) = entry.loaded_event {
                     self.sender.send_untyped(loaded_event);
@@ -112,7 +167,7 @@ impl Assets {
                 counters.remove(&gc_asset);
                 underlying.remove(&gc_asset);
                 if let Some(asset_path) = gc_asset.kind.asset_path() {
-                    path_id_index.remove(&(asset_path.path, OrderWindow::new(gc_asset)));
+                    path_id_index.remove(&(asset_path, OrderWindow::new(gc_asset)));
                 }
                 if let Some(unloaded_event) = unloaded_events.remove(&gc_asset) {
                     self.sender.send_untyped(unloaded_event);
@@ -123,13 +178,13 @@ impl Assets {
         next
     }
 
-    pub(crate) fn asset_ids_for_path(&self, path: Intern<RelativePathBuf>) -> Vec<UntypedAssetId> {
+    pub(crate) fn asset_ids_for_path(&self, asset_path: AssetPath) -> Vec<UntypedAssetId> {
         use std::ops::Bound::Included;
         let path_id_index = self.inner.path_id_index.read();
         path_id_index
             .range((
-                Included(&(path, OrderWindow::Start)),
-                Included(&(path, OrderWindow::End)),
+                Included(&(asset_path, OrderWindow::Start)),
+                Included(&(asset_path, OrderWindow::End)),
             ))
             .flat_map(|(_, id)| id.as_option().copied())
             .collect()

@@ -267,7 +267,7 @@ impl<T: Send + Sync + 'static> AssetLoader for AssetTableLoader<T, Weak> {
         &self,
         asset_dir: &'a Path,
         rel_path: &'a RelativePath,
-        _assets: &'a Assets,
+        assets: &'a Assets,
     ) -> anyhow::Result<Self::Asset> {
         let path = rel_path.to_path(asset_dir);
         log::info!(
@@ -275,6 +275,10 @@ impl<T: Send + Sync + 'static> AssetLoader for AssetTableLoader<T, Weak> {
             std::any::type_name::<T>(),
             path.display()
         );
+
+        let asset_path_kind = assets
+            .asset_path_kind(asset_dir)
+            .expect("asset dir to be known");
 
         let mut underlying = IndexMap::default();
         let dir = std::fs::read_dir(path)?;
@@ -287,7 +291,10 @@ impl<T: Send + Sync + 'static> AssetLoader for AssetTableLoader<T, Weak> {
 
             if let Some(file_name) = entry_path.file_name().and_then(|s| s.to_str()) {
                 let entry_rel_path = Intern::new(rel_path.join(file_name));
-                let entry_asset_id = WeakAssetId::new(AssetIdKind::AssetPath(entry_rel_path));
+                let entry_asset_id = WeakAssetId::new(AssetIdKind::AssetPath(AssetPath::new(
+                    asset_path_kind,
+                    entry_rel_path,
+                )));
                 underlying.insert(entry_rel_path, entry_asset_id);
             }
         }
