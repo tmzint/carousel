@@ -2,7 +2,7 @@
 pub use crate::asset::loader::{AssetLoader, LoadedAssetTable, StrongAssetTable, WeakAssetTable};
 pub use crate::asset::storage::{Assets, AssetsClient};
 pub use crate::asset::{
-    AssetEvent, AssetEventKind, AssetPath, AssetPathKind, AssetPathParam, AssetServer,
+    AssetEvent, AssetEventKind, AssetPath, AssetPathKind, AssetPathParam, AssetServer, AssetUri,
     AssetsCreatedEvent, LoadAssetEvent, LoadedAssetId, StrongAssetId, WeakAssetId,
 };
 pub use crate::platform::action::{ActionState, ActionTrigger, ActionsConfig};
