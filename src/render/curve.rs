@@ -354,7 +354,7 @@ impl Curves {
         geometry.indices.reverse();
 
         let mesh = assets.store(
-            Uuid::new_v4(),
+            curve_id,
             Mesh {
                 vertices: geometry.vertices,
                 indices: geometry.indices,

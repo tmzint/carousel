@@ -1,7 +1,6 @@
 use crate::asset::storage::{Assets, AssetsClient};
 use crate::asset::{
-    AssetId, AssetPath, AssetPathVisitor, AssetUri, Loaded, Strong, StrongAssetId, Weak,
-    WeakAssetId,
+    AssetId, AssetPath, AssetUri, AssetUriVisitor, Loaded, Strong, StrongAssetId, Weak, WeakAssetId,
 };
 use crate::util::IndexMap;
 use internment::Intern;
@@ -106,8 +105,8 @@ impl<'de, T: Send + Sync + 'static> Deserialize<'de> for AssetId<T, Weak> {
     where
         D: Deserializer<'de>,
     {
-        let path = deserializer.deserialize_string(AssetPathVisitor)?;
-        Ok(WeakAssetId::new(AssetUri::AssetPath(path)))
+        let uri = deserializer.deserialize_string(AssetUriVisitor)?;
+        Ok(WeakAssetId::new(uri))
     }
 }
 
@@ -117,20 +116,20 @@ impl<'de, T: Send + Sync + 'static> Deserialize<'de> for AssetId<T, Strong> {
     where
         D: Deserializer<'de>,
     {
-        // TODO: also allow inlined assets  -> name + data for T => insert into Assets (check deadlocks)
+        // TODO: also allow inlined assets (inline vs embedded?)
+        //  * uuid(even needed? only if referenced multiple times? serialization vs deserialization ... -> that's not inline but embedded?)
+        //  * data for T => insert into Assets (check deadlocks)
         //  How? the api expects Vec<u8>
+        //  "SceneFiles" that have a main Asset that reference other embedded/inlined assets
+        //  AssetIds need to define if they are external/embedded/inlined
 
-        let path = deserializer.deserialize_string(AssetPathVisitor)?;
-        let weak: WeakAssetId<T> = WeakAssetId::new(AssetUri::AssetPath(path));
+        let uri = deserializer.deserialize_string(AssetUriVisitor)?;
+        let weak: WeakAssetId<T> = WeakAssetId::new(uri);
 
         SERDE_THREAD_LOCAL.with(|maybe_tls| {
             let borrow_maybe_tls = maybe_tls.borrow();
             match borrow_maybe_tls.deref() {
-                Some(tls) => Ok(tls
-                    .assets
-                    .client()
-                    .try_upgrade(&weak)
-                    .expect("upgradable weak")),
+                Some(tls) => Ok(tls.assets.client().upgrade(&weak)),
                 None => Err(serde::de::Error::custom(
                     "strong asset ids can only be deserialized by the asset server",
                 )),
@@ -201,8 +200,7 @@ impl<T: Send + Sync + 'static> AssetTable<T, Weak> {
         let mut strong_table = IndexMap::default();
 
         for (k, v) in &self.0 {
-            // this should never fail as asset tables require path assets
-            let strong = client.try_upgrade(v).unwrap();
+            let strong = client.upgrade(v);
             strong_table.insert(*k, strong);
         }
 
@@ -303,7 +301,7 @@ impl<T: Send + Sync + 'static> AssetLoader for AssetTableLoader<T, Strong> {
         let assets = assets.client();
         let mut strong_table = IndexMap::default();
         for (key, weak) in weak_table.0 {
-            let strong = assets.try_upgrade(&weak).expect("upgradable weak");
+            let strong = assets.upgrade(&weak);
             strong_table.insert(key, strong);
         }
 

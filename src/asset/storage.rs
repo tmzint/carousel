@@ -207,8 +207,12 @@ impl<'a> AssetsClient<'a> {
         match counter {
             Some(counter) => weak.into_strong(counter),
             None => {
-                let counter = Arc::new(());
-                self.counters.write().insert(weak.untyped, counter.clone());
+                let counter = self
+                    .counters
+                    .write()
+                    .entry(weak.untyped)
+                    .or_insert(Arc::new(()))
+                    .clone();
 
                 log::info!("queue load asset: {:?}", weak);
                 if !self.sender.borrow().send(LoadAssetEvent::new(weak, false)) {
@@ -224,17 +228,28 @@ impl<'a> AssetsClient<'a> {
     }
 
     #[inline]
-    pub fn try_upgrade<T: Send + Sync + 'static>(
-        &self,
-        weak: &WeakAssetId<T>,
-    ) -> Option<StrongAssetId<T>> {
+    pub fn upgrade<T: Send + Sync + 'static>(&self, weak: &WeakAssetId<T>) -> StrongAssetId<T> {
         match weak.untyped.uri {
-            AssetUri::AssetPath(path) => Some(self.load(path)),
-            AssetUri::Uuid(_) => self
-                .counters
-                .read()
-                .get(&weak.untyped)
-                .map(|c| weak.into_strong(c.clone())),
+            AssetUri::AssetPath(path) => self.load(path),
+            AssetUri::Uuid(_) => {
+                if let Some(strong) = self
+                    .counters
+                    .read()
+                    .get(&weak.untyped)
+                    .map(|c| weak.into_strong(c.clone()))
+                {
+                    return strong;
+                }
+
+                let counter = self
+                    .counters
+                    .write()
+                    .entry(weak.untyped)
+                    .or_insert(Arc::new(()))
+                    .clone();
+
+                weak.into_strong(counter)
+            }
         }
     }
 
@@ -252,7 +267,6 @@ impl<'a> AssetsClient<'a> {
         }
     }
 
-    // TODO: support uuid?
     #[inline]
     pub fn store<T: Send + Sync + 'static, AI: Into<WeakAssetId<T>>>(
         &self,
@@ -266,10 +280,12 @@ impl<'a> AssetsClient<'a> {
         let strong_asset_id = match counter {
             Some(counter) => asset_id.into_strong(counter),
             None => {
-                let counter = Arc::new(());
-                self.counters
+                let counter = self
+                    .counters
                     .write()
-                    .insert(asset_id.untyped, counter.clone());
+                    .entry(asset_id.untyped)
+                    .or_insert(Arc::new(()))
+                    .clone();
 
                 asset_id.into_strong(counter)
             }

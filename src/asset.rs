@@ -29,6 +29,7 @@ use std::hash::Hasher;
 use std::marker::PhantomData;
 use std::ops::Deref;
 use std::path::{Path, PathBuf};
+use std::str::FromStr;
 use std::sync::Arc;
 use std::time::Duration;
 use uuid::Uuid;
@@ -169,6 +170,14 @@ impl AssetPath {
     }
 }
 
+impl FromStr for AssetPath {
+    type Err = anyhow::Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Self::from_uri(s)
+    }
+}
+
 impl TryFrom<&str> for AssetPath {
     type Error = anyhow::Error;
 
@@ -235,6 +244,54 @@ pub enum AssetUri {
     Uuid(Uuid),
 }
 
+impl AssetUri {
+    #[inline]
+    pub fn from_uri<T: AsRef<str>>(uri: T) -> anyhow::Result<Self> {
+        let uri = uri.as_ref();
+        if let Some(uuid) = uri.strip_prefix("uuid://") {
+            let uuid = Uuid::parse_str(uuid)?;
+            Ok(Self::Uuid(uuid))
+        } else {
+            let asset_path = AssetPath::from_uri(uri)?;
+            Ok(Self::AssetPath(asset_path))
+        }
+    }
+
+    #[inline]
+    pub fn asset_path(&self) -> Option<AssetPath> {
+        if let AssetUri::AssetPath(path) = self {
+            Some(*path)
+        } else {
+            None
+        }
+    }
+
+    #[inline]
+    pub fn uuid(&self) -> Option<Uuid> {
+        if let AssetUri::Uuid(uuid) = self {
+            Some(*uuid)
+        } else {
+            None
+        }
+    }
+}
+
+impl FromStr for AssetUri {
+    type Err = anyhow::Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Self::from_uri(s)
+    }
+}
+
+impl TryFrom<&str> for AssetUri {
+    type Error = anyhow::Error;
+
+    fn try_from(s: &str) -> Result<Self, Self::Error> {
+        Self::from_uri(s)
+    }
+}
+
 impl Debug for AssetUri {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         Display::fmt(self, f)
@@ -253,23 +310,41 @@ impl Display for AssetUri {
     }
 }
 
-impl AssetUri {
+struct AssetUriVisitor;
+
+impl<'de> Visitor<'de> for AssetUriVisitor {
+    type Value = AssetUri;
+
     #[inline]
-    pub fn asset_path(&self) -> Option<AssetPath> {
-        if let AssetUri::AssetPath(path) = self {
-            Some(*path)
-        } else {
-            None
-        }
+    fn expecting(&self, formatter: &mut Formatter) -> std::fmt::Result {
+        formatter.write_str("asset uri string")
     }
 
     #[inline]
-    pub fn uuid(&self) -> Option<Uuid> {
-        if let AssetUri::Uuid(uuid) = self {
-            Some(*uuid)
-        } else {
-            None
-        }
+    fn visit_str<E>(self, v: &str) -> Result<Self::Value, E>
+    where
+        E: serde::de::Error,
+    {
+        AssetUri::from_uri(v).map_err(serde::de::Error::custom)
+    }
+}
+
+impl<'de> Deserialize<'de> for AssetUri {
+    #[inline]
+    fn deserialize<D>(deserializer: D) -> Result<AssetUri, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        deserializer.deserialize_string(AssetUriVisitor)
+    }
+}
+
+impl Serialize for AssetUri {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        serializer.serialize_str(&self.to_string())
     }
 }
 

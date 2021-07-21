@@ -122,8 +122,8 @@ impl LoadingState {
                 println!("eager[{}]: {:?}", i, assets.try_get(eager));
             }
             for (i, lazy) in recursive.lazy.iter().enumerate() {
-                let lazy_loading = assets.try_upgrade(lazy);
-                println!("lazy[{}]: {:?}", i, assets.try_get(&lazy_loading.unwrap()));
+                let lazy_loading = assets.upgrade(lazy);
+                println!("lazy[{}]: {:?}", i, assets.try_get(&lazy_loading));
             }
         }
 

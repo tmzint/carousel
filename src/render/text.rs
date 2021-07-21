@@ -781,7 +781,7 @@ impl Texts {
         self.remove_loaded_text(text_id);
 
         // Optimization: move mesh generation from render thread
-        let mesh = assets.store(Uuid::new_v4(), font_layout.generate_mesh(&raw)?);
+        let mesh = assets.store(text_id, font_layout.generate_mesh(&raw)?);
         let raw_instance = raw.to_raw_instance(
             font_layout.size,
             font_layout.distance_range,
