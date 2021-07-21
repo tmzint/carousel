@@ -1,5 +1,5 @@
 use crate::asset::{
-    AssetId, AssetIdKind, AssetPath, AssetPathKind, LoadAssetEvent, Loaded, StoreAssetEvent,
+    AssetId, AssetPath, AssetPathKind, AssetUri, LoadAssetEvent, Loaded, StoreAssetEvent,
     StrongAssetId, SyncQueueEntry, UntypedAsset, UntypedAssetId, WeakAssetId,
 };
 use crate::prelude::LoadedAssetId;
@@ -114,7 +114,7 @@ impl Assets {
             if count > 0 {
                 underlying.insert(entry.asset_id, entry.asset);
 
-                if let Some(asset_path) = entry.asset_id.kind.asset_path() {
+                if let Some(asset_path) = entry.asset_id.uri.asset_path() {
                     path_id_index.insert((asset_path, OrderWindow::new(entry.asset_id)));
                 }
                 if let Some(loaded_event) = entry.loaded_event {
@@ -166,7 +166,7 @@ impl Assets {
                 log::info!("unloading asset: {:?}", gc_asset);
                 counters.remove(&gc_asset);
                 underlying.remove(&gc_asset);
-                if let Some(asset_path) = gc_asset.kind.asset_path() {
+                if let Some(asset_path) = gc_asset.uri.asset_path() {
                     path_id_index.remove(&(asset_path, OrderWindow::new(gc_asset)));
                 }
                 if let Some(unloaded_event) = unloaded_events.remove(&gc_asset) {
@@ -200,7 +200,7 @@ pub struct AssetsClient<'a> {
 impl<'a> AssetsClient<'a> {
     #[inline]
     pub fn load<T: Send + Sync + 'static>(&self, asset_path: AssetPath) -> StrongAssetId<T> {
-        let weak = WeakAssetId::new(AssetIdKind::AssetPath(asset_path));
+        let weak = WeakAssetId::new(AssetUri::AssetPath(asset_path));
 
         // have to use a val as a direct match won't drop the read lock
         let counter = self.counters.read().get(&weak.untyped).cloned();
@@ -228,9 +228,9 @@ impl<'a> AssetsClient<'a> {
         &self,
         weak: &WeakAssetId<T>,
     ) -> Option<StrongAssetId<T>> {
-        match weak.untyped.kind {
-            AssetIdKind::AssetPath(path) => Some(self.load(path)),
-            AssetIdKind::Uuid(_) => self
+        match weak.untyped.uri {
+            AssetUri::AssetPath(path) => Some(self.load(path)),
+            AssetUri::Uuid(_) => self
                 .counters
                 .read()
                 .get(&weak.untyped)

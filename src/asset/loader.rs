@@ -1,6 +1,6 @@
 use crate::asset::storage::{Assets, AssetsClient};
 use crate::asset::{
-    AssetId, AssetIdKind, AssetPath, AssetPathVisitor, Loaded, Strong, StrongAssetId, Weak,
+    AssetId, AssetPath, AssetPathVisitor, AssetUri, Loaded, Strong, StrongAssetId, Weak,
     WeakAssetId,
 };
 use crate::util::IndexMap;
@@ -107,7 +107,7 @@ impl<'de, T: Send + Sync + 'static> Deserialize<'de> for AssetId<T, Weak> {
         D: Deserializer<'de>,
     {
         let path = deserializer.deserialize_string(AssetPathVisitor)?;
-        Ok(WeakAssetId::new(AssetIdKind::AssetPath(path)))
+        Ok(WeakAssetId::new(AssetUri::AssetPath(path)))
     }
 }
 
@@ -121,7 +121,7 @@ impl<'de, T: Send + Sync + 'static> Deserialize<'de> for AssetId<T, Strong> {
         //  How? the api expects Vec<u8>
 
         let path = deserializer.deserialize_string(AssetPathVisitor)?;
-        let weak: WeakAssetId<T> = WeakAssetId::new(AssetIdKind::AssetPath(path));
+        let weak: WeakAssetId<T> = WeakAssetId::new(AssetUri::AssetPath(path));
 
         SERDE_THREAD_LOCAL.with(|maybe_tls| {
             let borrow_maybe_tls = maybe_tls.borrow();
@@ -266,7 +266,7 @@ impl<T: Send + Sync + 'static> AssetLoader for AssetTableLoader<T, Weak> {
 
             if let Some(file_name) = entry_path.file_name().and_then(|s| s.to_str()) {
                 let entry_rel_path = Intern::new(rel_path.join(file_name));
-                let entry_asset_id = WeakAssetId::new(AssetIdKind::AssetPath(AssetPath::new(
+                let entry_asset_id = WeakAssetId::new(AssetUri::AssetPath(AssetPath::new(
                     asset_path_kind,
                     entry_rel_path,
                 )));

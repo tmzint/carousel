@@ -230,22 +230,22 @@ impl Serialize for AssetPath {
 }
 
 #[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
-pub enum AssetIdKind {
+pub enum AssetUri {
     AssetPath(AssetPath),
     Uuid(Uuid),
 }
 
-impl Debug for AssetIdKind {
+impl Debug for AssetUri {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         Display::fmt(self, f)
     }
 }
 
-impl Display for AssetIdKind {
+impl Display for AssetUri {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
-            AssetIdKind::AssetPath(path) => Display::fmt(path, f),
-            AssetIdKind::Uuid(uuid) => {
+            AssetUri::AssetPath(path) => Display::fmt(path, f),
+            AssetUri::Uuid(uuid) => {
                 f.write_str("uuid://")?;
                 Display::fmt(uuid, f)
             }
@@ -253,10 +253,10 @@ impl Display for AssetIdKind {
     }
 }
 
-impl AssetIdKind {
+impl AssetUri {
     #[inline]
     pub fn asset_path(&self) -> Option<AssetPath> {
-        if let AssetIdKind::AssetPath(path) = self {
+        if let AssetUri::AssetPath(path) = self {
             Some(*path)
         } else {
             None
@@ -265,7 +265,7 @@ impl AssetIdKind {
 
     #[inline]
     pub fn uuid(&self) -> Option<Uuid> {
-        if let AssetIdKind::Uuid(uuid) = self {
+        if let AssetUri::Uuid(uuid) = self {
             Some(*uuid)
         } else {
             None
@@ -277,12 +277,12 @@ impl AssetIdKind {
 pub(crate) struct UntypedAssetId {
     // Optimization: use smaller hash that still guarantees no benign collisions
     id: [u8; blake3::OUT_LEN],
-    kind: AssetIdKind,
+    uri: AssetUri,
     tid: TypeId,
 }
 
 impl UntypedAssetId {
-    fn new(tid: TypeId, kind: AssetIdKind) -> Self {
+    fn new(tid: TypeId, uri: AssetUri) -> Self {
         // required as we otherwise can't hash tid
         struct Blake3StdHasher(blake3::Hasher);
         impl std::hash::Hasher for Blake3StdHasher {
@@ -297,13 +297,13 @@ impl UntypedAssetId {
         use std::hash::Hash;
         let mut hasher = Blake3StdHasher(blake3::Hasher::default());
         tid.hash(&mut hasher);
-        kind.hash(&mut hasher);
+        uri.hash(&mut hasher);
         let hash = hasher.0.finalize();
 
         UntypedAssetId {
             id: hash.into(),
             tid,
-            kind,
+            uri,
         }
     }
 }
@@ -322,7 +322,7 @@ impl Debug for UntypedAssetId {
 
         f.debug_struct("UntypedAssetId")
             .field("id", &format!("{:032x}{:032x}", id1, id2))
-            .field("kind", &self.kind)
+            .field("kind", &self.uri)
             .field("tid", &self.tid)
             .finish()
     }
@@ -366,14 +366,14 @@ impl<T, S> AssetId<T, S> {
     }
 
     #[inline]
-    pub fn kind(&self) -> AssetIdKind {
-        self.untyped.kind
+    pub fn uri(&self) -> AssetUri {
+        self.untyped.uri
     }
 }
 
 impl<T: 'static> AssetId<T, Weak> {
-    fn new(kind: AssetIdKind) -> Self {
-        let untyped = UntypedAssetId::new(TypeId::of::<T>(), kind);
+    fn new(uri: AssetUri) -> Self {
+        let untyped = UntypedAssetId::new(TypeId::of::<T>(), uri);
         Self {
             untyped,
             strength: Weak,
@@ -383,12 +383,12 @@ impl<T: 'static> AssetId<T, Weak> {
 
     #[inline]
     pub fn path(path: AssetPath) -> Self {
-        Self::new(AssetIdKind::AssetPath(path))
+        Self::new(AssetUri::AssetPath(path))
     }
 
     #[inline]
     pub fn uuid(uuid: Uuid) -> Self {
-        Self::new(AssetIdKind::Uuid(uuid))
+        Self::new(AssetUri::Uuid(uuid))
     }
 
     unsafe fn from_untyped(untyped: UntypedAssetId) -> Self {
@@ -599,7 +599,7 @@ impl AssetServerBuilder {
             TypeId::of::<T::Asset>(),
             Box::new(move |ap, id, a, es| {
                 let rp = id
-                    .kind
+                    .uri
                     .asset_path()
                     .ok_or_else(|| anyhow::anyhow!("asset path to load not found"))?;
                 let asset = loader.load(ap, rp.path.deref(), a)?;
@@ -727,12 +727,12 @@ fn on_load_asset_event<T: 'static + Send + Sync>(
                 return;
             }
 
-            let asset_dir = if let Some(asset_path) = event.id.kind().asset_path() {
+            let asset_dir = if let Some(asset_path) = event.id.uri().asset_path() {
                 state.assets.asset_dir(&asset_path.kind)
             } else {
                 log::error!(
                     "Can't load asset without an asset path {}",
-                    event.id.untyped.kind
+                    event.id.untyped.uri
                 );
                 return;
             };
@@ -743,7 +743,7 @@ fn on_load_asset_event<T: 'static + Send + Sync>(
                     Err(e) => {
                         // TODO: panic? -> this is probably required for LoadedAssetTables otherwise how to fail the loading?
                         //  -> dependency registration?
-                        log::error!("Could not load asset {}: {}", event.id.untyped.kind, e);
+                        log::error!("Could not load asset {}: {}", event.id.untyped.uri, e);
                         return;
                     }
                 };
@@ -841,7 +841,7 @@ fn on_notify_assets_event(
     for asset_id in changed_assets {
         let asset_dir = state
             .assets
-            .asset_dir(&asset_id.kind.asset_path().unwrap().kind);
+            .asset_dir(&asset_id.uri.asset_path().unwrap().kind);
 
         let loader = state
             .loaders
@@ -853,7 +853,7 @@ fn on_notify_assets_event(
             Err(e) => {
                 log::error!(
                     "Could not load asset {:?}: {}",
-                    asset_id.kind.asset_path(),
+                    asset_id.uri.asset_path(),
                     e
                 );
                 return;
