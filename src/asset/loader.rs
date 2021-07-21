@@ -1,5 +1,7 @@
 use crate::asset::storage::{Assets, AssetsClient};
-use crate::asset::{AssetId, AssetIdKind, Strong, StrongAssetId, Weak, WeakAssetId, Loaded};
+use crate::asset::{
+    AssetId, AssetIdKind, AssetPath, Loaded, Strong, StrongAssetId, Weak, WeakAssetId,
+};
 use crate::util::IndexMap;
 use internment::Intern;
 use relative_path::RelativePath;
@@ -121,8 +123,8 @@ impl<'de, T: 'static> Visitor<'de> for AssetIdVisitor<T> {
     where
         E: serde::de::Error,
     {
-        let path = RelativePathBuf::from(v);
-        Ok(WeakAssetId::new(AssetIdKind::Path(Intern::new(path))))
+        let path = AssetPath::from_uri(v).map_err(serde::de::Error::custom)?;
+        Ok(WeakAssetId::new(AssetIdKind::AssetPath(path)))
     }
 }
 
@@ -209,7 +211,7 @@ impl<'a> AssetTableKey for &'a String {
 #[derive(Debug)]
 pub struct AssetTable<T: 'static, S>(IndexMap<Intern<RelativePathBuf>, AssetId<T, S>>);
 
-impl<T: Send + Sync +'static, S> AssetTable<T, S> {
+impl<T: Send + Sync + 'static, S> AssetTable<T, S> {
     pub fn get<K: AssetTableKey>(&self, key: K) -> Option<&AssetId<T, S>> {
         self.0.get(&key.key())
     }
@@ -219,7 +221,7 @@ impl<T: Send + Sync +'static, S> AssetTable<T, S> {
     }
 }
 
-impl<T: Send + Sync +'static> AssetTable<T, Weak> {
+impl<T: Send + Sync + 'static> AssetTable<T, Weak> {
     pub fn upgrade(&self, client: &AssetsClient) -> StrongAssetTable<T> {
         let mut strong_table = IndexMap::default();
 
@@ -233,8 +235,8 @@ impl<T: Send + Sync +'static> AssetTable<T, Weak> {
     }
 }
 
-impl<T: Send + Sync +'static> AssetTable<T, Strong> {
-    pub fn try_loaded(&self, client: &AssetsClient) -> Option<LoadedAssetTable<T>>{
+impl<T: Send + Sync + 'static> AssetTable<T, Strong> {
+    pub fn try_loaded(&self, client: &AssetsClient) -> Option<LoadedAssetTable<T>> {
         let mut loaded_table = IndexMap::default();
 
         for (k, v) in &self.0 {
@@ -242,7 +244,9 @@ impl<T: Send + Sync +'static> AssetTable<T, Strong> {
                 Some(loaded) => {
                     loaded_table.insert(*k, loaded);
                 }
-                None => {return None;}
+                None => {
+                    return None;
+                }
             }
         }
 
@@ -283,7 +287,7 @@ impl<T: Send + Sync + 'static> AssetLoader for AssetTableLoader<T, Weak> {
 
             if let Some(file_name) = entry_path.file_name().and_then(|s| s.to_str()) {
                 let entry_rel_path = Intern::new(rel_path.join(file_name));
-                let entry_asset_id = WeakAssetId::new(AssetIdKind::Path(entry_rel_path));
+                let entry_asset_id = WeakAssetId::new(AssetIdKind::AssetPath(entry_rel_path));
                 underlying.insert(entry_rel_path, entry_asset_id);
             }
         }

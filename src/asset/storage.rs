@@ -1,13 +1,16 @@
-use crate::asset::{AssetId, AssetIdKind, LoadAssetEvent, StoreAssetEvent, StrongAssetId, SyncQueueEntry, UntypedAsset, UntypedAssetId, WeakAssetId, Loaded};
+use crate::asset::{
+    AssetId, AssetIdKind, AssetPath, LoadAssetEvent, Loaded, StoreAssetEvent, StrongAssetId,
+    SyncQueueEntry, UntypedAsset, UntypedAssetId, WeakAssetId,
+};
+use crate::prelude::LoadedAssetId;
 use crate::util::{HashMap, IndexMap, OrderWindow};
 use internment::Intern;
 use parking_lot::{RwLock, RwLockReadGuard};
-use relative_path::{RelativePath, RelativePathBuf};
+use relative_path::RelativePathBuf;
 use roundabout::prelude::{MessageSender, UntypedMessage};
 use std::borrow::Borrow;
 use std::collections::BTreeSet;
 use std::sync::Arc;
-use crate::prelude::LoadedAssetId;
 
 #[derive(Default)]
 pub(crate) struct InnerAssets {
@@ -56,8 +59,8 @@ impl Assets {
             if count > 0 {
                 underlying.insert(entry.asset_id, entry.asset);
 
-                if let Some(path) = entry.asset_id.kind.path() {
-                    path_id_index.insert((path, OrderWindow::new(entry.asset_id)));
+                if let Some(asset_path) = entry.asset_id.kind.asset_path() {
+                    path_id_index.insert((asset_path.path(), OrderWindow::new(entry.asset_id)));
                 }
                 if let Some(loaded_event) = entry.loaded_event {
                     self.sender.send_untyped(loaded_event);
@@ -108,8 +111,8 @@ impl Assets {
                 log::info!("unloading asset: {:?}", gc_asset);
                 counters.remove(&gc_asset);
                 underlying.remove(&gc_asset);
-                if let Some(path) = gc_asset.kind.path() {
-                    path_id_index.remove(&(path, OrderWindow::new(gc_asset)));
+                if let Some(asset_path) = gc_asset.kind.asset_path() {
+                    path_id_index.remove(&(asset_path.path, OrderWindow::new(gc_asset)));
                 }
                 if let Some(unloaded_event) = unloaded_events.remove(&gc_asset) {
                     self.sender.send_untyped(unloaded_event);
@@ -133,59 +136,6 @@ impl Assets {
     }
 }
 
-pub trait LoadAssetParam {
-    fn path(self) -> Intern<RelativePathBuf>;
-}
-
-impl LoadAssetParam for RelativePathBuf {
-    #[inline]
-    fn path(self) -> Intern<RelativePathBuf> {
-        Intern::new(self)
-    }
-}
-
-impl LoadAssetParam for &RelativePathBuf {
-    #[inline]
-    fn path(self) -> Intern<RelativePathBuf> {
-        Intern::new(self.to_owned())
-    }
-}
-
-impl LoadAssetParam for &RelativePath {
-    #[inline]
-    fn path(self) -> Intern<RelativePathBuf> {
-        Intern::new(self.to_owned())
-    }
-}
-
-impl LoadAssetParam for String {
-    #[inline]
-    fn path(self) -> Intern<RelativePathBuf> {
-        Intern::new(self.into())
-    }
-}
-
-impl LoadAssetParam for &String {
-    #[inline]
-    fn path(self) -> Intern<RelativePathBuf> {
-        Intern::new(self.into())
-    }
-}
-
-impl LoadAssetParam for &str {
-    #[inline]
-    fn path(self) -> Intern<RelativePathBuf> {
-        Intern::new(self.into())
-    }
-}
-
-impl LoadAssetParam for Intern<RelativePathBuf> {
-    #[inline]
-    fn path(self) -> Intern<RelativePathBuf> {
-        self
-    }
-}
-
 pub struct AssetsClient<'a> {
     underlying: RwLockReadGuard<'a, HashMap<UntypedAssetId, UntypedAsset>>,
     counters: &'a RwLock<IndexMap<UntypedAssetId, Arc<()>>>,
@@ -194,8 +144,8 @@ pub struct AssetsClient<'a> {
 
 impl<'a> AssetsClient<'a> {
     #[inline]
-    pub fn load<T: Send + Sync + 'static, P: LoadAssetParam>(&self, path: P) -> StrongAssetId<T> {
-        let weak = WeakAssetId::new(AssetIdKind::Path(path.path()));
+    pub fn load<T: Send + Sync + 'static>(&self, asset_path: AssetPath) -> StrongAssetId<T> {
+        let weak = WeakAssetId::new(AssetIdKind::AssetPath(asset_path));
 
         // have to use a val as a direct match won't drop the read lock
         let counter = self.counters.read().get(&weak.untyped).cloned();
@@ -224,7 +174,7 @@ impl<'a> AssetsClient<'a> {
         weak: &WeakAssetId<T>,
     ) -> Option<StrongAssetId<T>> {
         match weak.untyped.kind {
-            AssetIdKind::Path(path) => Some(self.load(path)),
+            AssetIdKind::AssetPath(path) => Some(self.load(path)),
             AssetIdKind::Uuid(_) => self
                 .counters
                 .read()
@@ -247,6 +197,7 @@ impl<'a> AssetsClient<'a> {
         }
     }
 
+    // TODO: support uuid?
     #[inline]
     pub fn store<T: Send + Sync + 'static, AI: Into<WeakAssetId<T>>>(
         &self,

@@ -22,8 +22,8 @@ use roundabout::prelude::*;
 use serde::de::DeserializeOwned;
 use std::any::{Any, TypeId};
 use std::cmp::Ordering;
-use std::convert::TryInto;
-use std::fmt::{Debug, Formatter};
+use std::convert::{TryFrom, TryInto};
+use std::fmt::{Debug, Display, Formatter};
 use std::hash::Hasher;
 use std::marker::PhantomData;
 use std::ops::Deref;
@@ -33,17 +33,190 @@ use std::time::Duration;
 use uuid::Uuid;
 
 // TODO: mutable vs immutable assets (user)
+//  2. add user dir to config // rename assets dir to system dir
+//  3. add dir resolution for assets loading
+//  4. add user load
+//  5. add user hot reloading
+//  6. add save for UserAssets // errors? via events -> add load errors as well? -> typed?
+
+#[derive(Debug, Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
+pub enum AssetPathKind {
+    Sys,
+    Usr,
+}
+
+impl AssetPathKind {
+    #[inline]
+    pub fn protocol(&self) -> &'static str {
+        match self {
+            AssetPathKind::Sys => "sys",
+            AssetPathKind::Usr => "usr",
+        }
+    }
+
+    #[inline]
+    pub fn from_protocol(protocol: &str) -> Option<Self> {
+        match protocol {
+            "sys" => Some(Self::Sys),
+            "usr" => Some(Self::Usr),
+            _ => None,
+        }
+    }
+}
+
+pub trait AssetPathParam {
+    fn path(self) -> Intern<RelativePathBuf>;
+}
+
+impl AssetPathParam for RelativePathBuf {
+    #[inline]
+    fn path(self) -> Intern<RelativePathBuf> {
+        Intern::new(self)
+    }
+}
+
+impl AssetPathParam for &RelativePathBuf {
+    #[inline]
+    fn path(self) -> Intern<RelativePathBuf> {
+        Intern::new(self.to_owned())
+    }
+}
+
+impl AssetPathParam for &RelativePath {
+    #[inline]
+    fn path(self) -> Intern<RelativePathBuf> {
+        Intern::new(self.to_owned())
+    }
+}
+
+impl AssetPathParam for String {
+    #[inline]
+    fn path(self) -> Intern<RelativePathBuf> {
+        Intern::new(self.into())
+    }
+}
+
+impl AssetPathParam for &String {
+    #[inline]
+    fn path(self) -> Intern<RelativePathBuf> {
+        Intern::new(self.into())
+    }
+}
+
+impl AssetPathParam for &str {
+    #[inline]
+    fn path(self) -> Intern<RelativePathBuf> {
+        Intern::new(self.into())
+    }
+}
+
+impl AssetPathParam for Intern<RelativePathBuf> {
+    #[inline]
+    fn path(self) -> Intern<RelativePathBuf> {
+        self
+    }
+}
+
+#[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
+pub struct AssetPath {
+    kind: AssetPathKind,
+    path: Intern<RelativePathBuf>,
+}
+
+impl AssetPath {
+    #[inline]
+    pub fn kind(&self) -> AssetPathKind {
+        self.kind
+    }
+
+    #[inline]
+    pub fn path(&self) -> Intern<RelativePathBuf> {
+        self.path
+    }
+
+    #[inline]
+    pub fn from_uri<T: AsRef<str>>(uri: T) -> anyhow::Result<Self> {
+        let uri = uri.as_ref();
+        let (protocol, path) = uri
+            .split_once("://")
+            .ok_or_else(|| anyhow::anyhow!("malformed asset path uri {}", uri))?;
+        let kind = AssetPathKind::from_protocol(protocol).ok_or_else(|| {
+            anyhow::anyhow!("unknown asset protocol of {} for path {}", protocol, path)
+        })?;
+
+        Ok(Self {
+            kind,
+            path: path.path(),
+        })
+    }
+
+    #[inline]
+    pub fn sys<T: AssetPathParam>(path: T) -> Self {
+        Self {
+            kind: AssetPathKind::Sys,
+            path: path.path(),
+        }
+    }
+
+    #[inline]
+    pub fn usr<T: AssetPathParam>(path: T) -> Self {
+        Self {
+            kind: AssetPathKind::Usr,
+            path: path.path(),
+        }
+    }
+}
+
+impl TryFrom<&str> for AssetPath {
+    type Error = anyhow::Error;
+
+    fn try_from(s: &str) -> Result<Self, Self::Error> {
+        Self::from_uri(s)
+    }
+}
+
+impl Debug for AssetPath {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        Display::fmt(self, f)
+    }
+}
+
+impl Display for AssetPath {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.kind.protocol())?;
+        f.write_str("://")?;
+        f.write_str(self.path.deref().as_str())
+    }
+}
 
 #[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
 pub enum AssetIdKind {
-    Path(Intern<RelativePathBuf>),
+    AssetPath(AssetPath),
     Uuid(Uuid),
+}
+
+impl Debug for AssetIdKind {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        Display::fmt(self, f)
+    }
+}
+
+impl Display for AssetIdKind {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            AssetIdKind::AssetPath(path) => Display::fmt(path, f),
+            AssetIdKind::Uuid(uuid) => {
+                f.write_str("uuid://")?;
+                Display::fmt(uuid, f)
+            }
+        }
+    }
 }
 
 impl AssetIdKind {
     #[inline]
-    pub fn path(&self) -> Option<Intern<RelativePathBuf>> {
-        if let AssetIdKind::Path(path) = self {
+    pub fn asset_path(&self) -> Option<AssetPath> {
+        if let AssetIdKind::AssetPath(path) = self {
             Some(*path)
         } else {
             None
@@ -56,15 +229,6 @@ impl AssetIdKind {
             Some(*uuid)
         } else {
             None
-        }
-    }
-}
-
-impl Debug for AssetIdKind {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        match self {
-            AssetIdKind::Path(path) => f.debug_tuple("Path").field(path.deref()).finish(),
-            AssetIdKind::Uuid(uuid) => f.debug_tuple("Uuid").field(uuid).finish(),
         }
     }
 }
@@ -178,12 +342,12 @@ impl<T: 'static> AssetId<T, Weak> {
     }
 
     #[inline]
-    pub fn new_path<P: Into<RelativePathBuf>>(path: P) -> Self {
-        Self::new(AssetIdKind::Path(Intern::new(path.into())))
+    pub fn path(path: AssetPath) -> Self {
+        Self::new(AssetIdKind::AssetPath(path))
     }
 
     #[inline]
-    pub fn new_uuid(uuid: Uuid) -> Self {
+    pub fn uuid(uuid: Uuid) -> Self {
         Self::new(AssetIdKind::Uuid(uuid))
     }
 
@@ -239,7 +403,7 @@ impl<T: 'static, S> AssetId<T, S> {
 impl<T: 'static> From<Uuid> for AssetId<T, Weak> {
     #[inline]
     fn from(uuid: Uuid) -> Self {
-        AssetId::new_uuid(uuid)
+        AssetId::uuid(uuid)
     }
 }
 
@@ -394,7 +558,7 @@ impl AssetServerBuilder {
             Box::new(move |ap, id, a, es| {
                 let rp = id
                     .kind
-                    .path()
+                    .asset_path()
                     .ok_or_else(|| anyhow::anyhow!("asset path to load not found"))?;
                 let asset = loader.load(ap, &rp, a)?;
                 let typed_id: WeakAssetId<T::Asset> = WeakAssetId::from_untyped(id);
@@ -514,7 +678,7 @@ fn on_load_asset_event<T: 'static + Send + Sync>(
                         //  -> dependency registration?
                         log::error!(
                             "Could not load asset {:?}: {}",
-                            event.id.untyped.kind.path(),
+                            event.id.untyped.kind.asset_path(),
                             e
                         );
                         return;
@@ -618,7 +782,11 @@ fn on_timed_notify_assets_event(
         let sync_queue_entry = match (loader)(asset_dir, asset_id, &state.assets, context) {
             Ok(ok) => ok,
             Err(e) => {
-                log::error!("Could not load asset {:?}: {}", asset_id.kind.path(), e);
+                log::error!(
+                    "Could not load asset {:?}: {}",
+                    asset_id.kind.asset_path(),
+                    e
+                );
                 return;
             }
         };

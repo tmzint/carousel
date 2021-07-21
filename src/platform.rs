@@ -4,7 +4,9 @@ pub mod key;
 pub mod message;
 
 use crate::asset::storage::{Assets, AssetsClient};
-use crate::asset::{AssetEvent, AssetEventKind, AssetsCreatedEvent, StrongAssetId, WeakAssetId};
+use crate::asset::{
+    AssetEvent, AssetEventKind, AssetPath, AssetsCreatedEvent, StrongAssetId, WeakAssetId,
+};
 use crate::platform::action::{Actions, ActionsConfig};
 use crate::platform::input::Inputs;
 use crate::platform::message::{
@@ -13,7 +15,6 @@ use crate::platform::message::{
 use crate::render::message::DrawnEvent;
 use crate::sim::SimulatedEvent;
 use crate::InitEvent;
-use relative_path::RelativePathBuf;
 use roundabout::prelude::*;
 use serde::Deserialize;
 use std::time::Instant;
@@ -67,7 +68,7 @@ impl Into<Option<winit::window::Fullscreen>> for Fullscreen {
 
 enum ConfigOriginInner<T> {
     Inline(T),
-    AssetPath(RelativePathBuf),
+    AssetPath(AssetPath),
     AssetId(StrongAssetId<T>),
 }
 
@@ -80,7 +81,7 @@ pub struct ConfigOrigin<T> {
 impl<T: Send + Sync + 'static> ConfigOrigin<T> {
     fn init(&mut self, assets: &AssetsClient) {
         if let ConfigOriginInner::AssetPath(path) = &self.inner {
-            let asset_id = assets.load(path);
+            let asset_id = assets.load(*path);
             self.dirty = assets.has(&asset_id);
             self.inner = ConfigOriginInner::AssetId(asset_id);
         }
@@ -122,10 +123,10 @@ impl From<ActionsConfig> for ConfigOrigin<ActionsConfig> {
     }
 }
 
-impl<T, P: Into<RelativePathBuf>> From<P> for ConfigOrigin<T> {
-    fn from(asset: P) -> Self {
+impl<T> From<AssetPath> for ConfigOrigin<T> {
+    fn from(asset_path: AssetPath) -> Self {
         ConfigOrigin {
-            inner: ConfigOriginInner::AssetPath(asset.into()),
+            inner: ConfigOriginInner::AssetPath(asset_path),
             dirty: false,
         }
     }
