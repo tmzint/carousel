@@ -207,7 +207,7 @@ impl AssetLoader for ImageLoader {
         &self,
         _path: &'a RelativePath,
         bytes: Vec<u8>,
-        _assets: &'a Assets,
+        _assets: &'a mut Assets,
     ) -> anyhow::Result<Self::Asset> {
         let img = image::load_from_memory(&bytes)?;
         Ok(img)

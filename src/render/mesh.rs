@@ -39,7 +39,7 @@ impl AssetLoader for MeshLoader {
         &self,
         path: &'a RelativePath,
         bytes: Vec<u8>,
-        _assets: &'a Assets,
+        _assets: &'a mut Assets,
     ) -> anyhow::Result<Self::Asset> {
         let extension = path.extension().ok_or_else(|| {
             anyhow::anyhow!(

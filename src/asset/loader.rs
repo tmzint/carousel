@@ -10,7 +10,7 @@ use serde::de::DeserializeOwned;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::cell::RefCell;
 use std::marker::PhantomData;
-use std::ops::Deref;
+use std::ops::DerefMut;
 use std::path::Path;
 
 pub trait AssetLoader: Sized + Send + Sync + 'static {
@@ -21,7 +21,7 @@ pub trait AssetLoader: Sized + Send + Sync + 'static {
         &self,
         asset_dir: &'a Path,
         rel_path: &'a RelativePath,
-        assets: &'a Assets,
+        assets: &'a mut Assets,
     ) -> anyhow::Result<Self::Asset> {
         // TODO: give struct that can read assets and the asset dirs instead of separation into two methods
         //  required for inline assets?
@@ -40,7 +40,7 @@ pub trait AssetLoader: Sized + Send + Sync + 'static {
         &self,
         path: &'a RelativePath,
         bytes: Vec<u8>,
-        assets: &'a Assets,
+        assets: &'a mut Assets,
     ) -> anyhow::Result<Self::Asset>;
 }
 
@@ -63,7 +63,7 @@ impl<T: DeserializeOwned + Send + Sync + 'static> AssetLoader for SerdeAssetLoad
         &self,
         path: &'a RelativePath,
         bytes: Vec<u8>,
-        assets: &'a Assets,
+        assets: &'a mut Assets,
     ) -> anyhow::Result<Self::Asset> {
         let extension = path.extension().ok_or_else(|| {
             anyhow::anyhow!(
@@ -127,8 +127,8 @@ impl<'de, T: Send + Sync + 'static> Deserialize<'de> for AssetId<T, Strong> {
         let weak: WeakAssetId<T> = WeakAssetId::new(uri);
 
         SERDE_THREAD_LOCAL.with(|maybe_tls| {
-            let borrow_maybe_tls = maybe_tls.borrow();
-            match borrow_maybe_tls.deref() {
+            let mut borrow_maybe_tls = maybe_tls.borrow_mut();
+            match borrow_maybe_tls.deref_mut() {
                 Some(tls) => Ok(tls.assets.client().upgrade(&weak)),
                 None => Err(serde::de::Error::custom(
                     "strong asset ids can only be deserialized by the asset server",
@@ -249,7 +249,7 @@ impl<T: Send + Sync + 'static> AssetLoader for AssetTableLoader<T, Weak> {
         &self,
         asset_dir: &'a Path,
         rel_path: &'a RelativePath,
-        assets: &'a Assets,
+        assets: &'a mut Assets,
     ) -> anyhow::Result<Self::Asset> {
         let path = rel_path.to_path(asset_dir);
         log::info!(
@@ -259,6 +259,7 @@ impl<T: Send + Sync + 'static> AssetLoader for AssetTableLoader<T, Weak> {
         );
 
         let asset_path_kind = assets
+            .paths
             .asset_path_kind(asset_dir)
             .expect("asset dir to be known");
 
@@ -288,7 +289,7 @@ impl<T: Send + Sync + 'static> AssetLoader for AssetTableLoader<T, Weak> {
         &self,
         _path: &'a RelativePath,
         _bytes: Vec<u8>,
-        _assets: &'a Assets,
+        _assets: &'a mut Assets,
     ) -> anyhow::Result<Self::Asset> {
         unreachable!();
     }
@@ -302,7 +303,7 @@ impl<T: Send + Sync + 'static> AssetLoader for AssetTableLoader<T, Strong> {
         &self,
         asset_dir: &'a Path,
         rel_path: &'a RelativePath,
-        assets: &'a Assets,
+        assets: &'a mut Assets,
     ) -> anyhow::Result<Self::Asset> {
         let weak_loader: AssetTableLoader<T, Weak> = AssetTableLoader::default();
         let weak_table = weak_loader.load(asset_dir, rel_path, assets)?;
@@ -321,7 +322,7 @@ impl<T: Send + Sync + 'static> AssetLoader for AssetTableLoader<T, Strong> {
         &self,
         _path: &'a RelativePath,
         _bytes: Vec<u8>,
-        _assets: &'a Assets,
+        _assets: &'a mut Assets,
     ) -> anyhow::Result<Self::Asset> {
         unreachable!();
     }

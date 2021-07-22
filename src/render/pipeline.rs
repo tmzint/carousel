@@ -182,7 +182,7 @@ impl AssetLoader for WGSLSourceLoader {
         &self,
         _path: &'a RelativePath,
         bytes: Vec<u8>,
-        _assets: &'a Assets,
+        _assets: &'a mut Assets,
     ) -> anyhow::Result<Self::Asset> {
         let shader_src = String::from_utf8(bytes)?;
         Ok(WGSLSource(shader_src.into()))

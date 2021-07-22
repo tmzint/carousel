@@ -12,6 +12,7 @@ pub mod view;
 use crate::asset::storage::Assets;
 use crate::asset::{AssetEvent, AssetEventKind, AssetsCreatedEvent};
 use crate::platform::message::{DisplayCreatedEvent, DisplayResizedEvent, FrameRequestedEvent};
+use crate::prelude::AssetsClient;
 use crate::render::camera::Cameras;
 use crate::render::canvas::Canvasses;
 use crate::render::client::RenderDefaults;
@@ -66,7 +67,7 @@ pub struct Renderer {
 
 impl Renderer {
     pub async fn new(
-        assets: &Assets,
+        assets: &AssetsClient<'_>,
         sender: &MessageSender,
         size: [u32; 2],
         instance: wgpu::Instance,
@@ -149,7 +150,6 @@ impl Renderer {
                 push_constant_ranges: &[],
             });
 
-        let assets = assets.client();
         let pipelines = Pipelines::new(&assets, render_pipeline_layout, samples);
         let textures = Textures::new(&assets, diffuse_bind_group_layout);
         let meshes = Meshes::new(&assets);
@@ -259,11 +259,12 @@ fn on_display_created_event(
 
     let assets = state
         .assets
-        .as_ref()
-        .expect("assets before display was created");
+        .as_mut()
+        .expect("assets before display was created")
+        .client();
 
     let renderer = futures::executor::block_on(Renderer::new(
-        assets,
+        &assets,
         context.sender(),
         event.window_size,
         render_resources.instance,
@@ -368,7 +369,7 @@ fn on_wgsl_source_asset_event(
 
     match event.kind {
         AssetEventKind::Load => {
-            let assets = state.assets.as_ref().unwrap().client();
+            let assets = state.assets.as_mut().unwrap().client();
             if let Some(source) = assets.try_get(&event.id) {
                 renderer
                     .pipelines
@@ -433,7 +434,7 @@ fn on_image_asset_event(
             .as_mut()
             .expect("render to be available before image");
 
-        let assets = state.assets.as_ref().unwrap().client();
+        let assets = state.assets.as_mut().unwrap().client();
         if let Some(image) = assets.try_get(&event.id) {
             for texture_id in renderer.textures.textures_for_image(event.id) {
                 if let Some(texture) = assets.try_get(&texture_id) {
@@ -462,7 +463,7 @@ fn on_texture_asset_event(
 
     match event.kind {
         AssetEventKind::Load => {
-            let assets = state.assets.as_ref().unwrap().client();
+            let assets = state.assets.as_mut().unwrap().client();
             if let Some(texture) = assets.try_get(&event.id) {
                 if let Some(image) = assets.try_get(&texture.image) {
                     renderer.textures.upsert_texture(
@@ -566,7 +567,7 @@ fn on_font_layout_asset_event(
             .as_mut()
             .expect("render to be available before font");
 
-        let assets = state.assets.as_ref().unwrap().client();
+        let assets = state.assets.as_mut().unwrap().client();
         if let Some(font_layout) = assets.try_get(&event.id) {
             for text_id in renderer.texts.texts_for_font_layout(event.id) {
                 let (raw_text, canvas_layer_id) = renderer
@@ -619,7 +620,7 @@ fn on_font_asset_event(
             .as_mut()
             .expect("render to be available before font");
 
-        let assets = state.assets.as_ref().unwrap().client();
+        let assets = state.assets.as_mut().unwrap().client();
         if let Some(font) = assets.try_get(&event.id) {
             for text_id in renderer.texts.texts_for_font(event.id) {
                 let (raw_text, canvas_layer_id) = renderer
@@ -706,7 +707,7 @@ fn on_text_event(state: &mut RenderServer, _context: &mut RuntimeContext, event:
         }
     };
 
-    let assets = state.assets.as_ref().unwrap().client();
+    let assets = state.assets.as_mut().unwrap().client();
     let font = assets.try_get(&raw_text.font);
     let font_layout = font.and_then(|f| assets.try_get(&f.layout));
 
@@ -792,7 +793,7 @@ fn on_curve_event(state: &mut RenderServer, _context: &mut RuntimeContext, event
         }
     };
 
-    let assets = state.assets.as_ref().unwrap().client();
+    let assets = state.assets.as_mut().unwrap().client();
 
     let raw_instance = renderer
         .curves

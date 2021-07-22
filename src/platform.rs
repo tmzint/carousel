@@ -197,7 +197,7 @@ fn on_asset_created_event(
     assert!(state.assets.is_none());
     state.assets = Some(event.assets(context.sender().to_owned()));
 
-    let asset = state.assets.as_ref().unwrap().client();
+    let asset = state.assets.as_mut().unwrap().client();
     state.display_config.init(&asset);
     state.actions_config.init(&asset);
 }
@@ -253,7 +253,7 @@ fn run_event_loop(
     }
 
     let window_builder = {
-        let assets = platform.state.assets.as_ref().unwrap().client();
+        let assets = platform.state.assets.as_mut().unwrap().client();
         let config = platform
             .state
             .display_config
@@ -277,7 +277,7 @@ fn run_event_loop(
     let mut inputs = Inputs::new(window.inner_size().into());
     let mut actions = {
         // Optimization: move to a separate MessageHandler
-        let assets = platform.state.assets.as_ref().unwrap().client();
+        let assets = platform.state.assets.as_mut().unwrap().client();
         let config = platform.state.actions_config.take(&assets);
         Actions::new(config.cloned().unwrap_or_default())
     };
@@ -299,7 +299,7 @@ fn run_event_loop(
         }
         Event::MainEventsCleared => {
             if platform.state.display_config.dirty {
-                let assets = platform.state.assets.as_ref().unwrap().client();
+                let assets = platform.state.assets.as_mut().unwrap().client();
                 let config = platform
                     .state
                     .display_config
@@ -320,7 +320,7 @@ fn run_event_loop(
             }
 
             if platform.state.actions_config.dirty {
-                let assets = platform.state.assets.as_ref().unwrap().client();
+                let assets = platform.state.assets.as_mut().unwrap().client();
                 let config = platform.state.actions_config.take(&assets);
                 actions.set_config(config.cloned().unwrap_or_default());
             }

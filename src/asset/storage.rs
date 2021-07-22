@@ -11,27 +11,15 @@ use roundabout::prelude::{MessageSender, UntypedMessage};
 use std::borrow::Borrow;
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
+use std::rc::Rc;
 use std::sync::Arc;
 
-#[derive(Default)]
-pub(crate) struct InnerAssets {
-    // Optimization: use a custom structure that has better data locality and less indirections (e.g. generational arena based)
-    // Optimization: use a smaller key / pre computed hash
-    underlying: RwLock<HashMap<UntypedAssetId, UntypedAsset>>,
-    counters: RwLock<IndexMap<UntypedAssetId, Arc<()>>>,
-    path_id_index: RwLock<BTreeSet<(AssetPath, OrderWindow<UntypedAssetId>)>>,
-    unloaded_events: RwLock<HashMap<UntypedAssetId, UntypedMessage>>,
-}
-
-#[derive(Clone)]
-pub struct Assets {
-    pub(crate) inner: Arc<InnerAssets>,
-    pub(crate) sender: MessageSender,
+pub struct AssetsPaths {
     pub(crate) sys_dir: PathBuf,
     pub(crate) usr_dir: PathBuf,
 }
 
-impl Assets {
+impl AssetsPaths {
     #[inline]
     pub fn sys_dir(&self) -> &Path {
         &self.sys_dir
@@ -83,9 +71,33 @@ impl Assets {
                 }
             })
     }
+}
+
+#[derive(Default)]
+pub(crate) struct InnerAssets {
+    // Optimization: use a custom structure that has better data locality and less indirections (e.g. generational arena based)
+    // Optimization: use a smaller key / pre computed hash
+    underlying: RwLock<HashMap<UntypedAssetId, UntypedAsset>>,
+    counters: RwLock<IndexMap<UntypedAssetId, Arc<()>>>,
+    path_id_index: RwLock<BTreeSet<(AssetPath, OrderWindow<UntypedAssetId>)>>,
+    unloaded_events: RwLock<HashMap<UntypedAssetId, UntypedMessage>>,
+}
+
+#[derive(Clone)]
+pub struct Assets {
+    pub(crate) inner: Arc<InnerAssets>,
+    pub(crate) sender: MessageSender,
+    pub(crate) paths: Rc<AssetsPaths>,
+}
+
+impl Assets {
+    #[inline]
+    pub fn paths(&self) -> &Rc<AssetsPaths> {
+        &self.paths
+    }
 
     #[inline]
-    pub fn client(&self) -> AssetsClient {
+    pub fn client(&mut self) -> AssetsClient {
         AssetsClient {
             underlying: self.inner.underlying.read(),
             counters: &self.inner.counters,

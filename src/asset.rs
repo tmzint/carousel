@@ -4,7 +4,7 @@ pub mod storage;
 
 use crate::asset::loader::{AssetLoader, AssetTableLoader, SerdeAssetLoader};
 use crate::asset::notify::AssetChangeNotify;
-use crate::asset::storage::{Assets, InnerAssets};
+use crate::asset::storage::{Assets, AssetsPaths, InnerAssets};
 use crate::platform::action::ActionsConfig;
 use crate::platform::DisplayConfig;
 use crate::prelude::Font;
@@ -29,6 +29,7 @@ use std::hash::Hasher;
 use std::marker::PhantomData;
 use std::ops::Deref;
 use std::path::{Path, PathBuf};
+use std::rc::Rc;
 use std::str::FromStr;
 use std::sync::Arc;
 use std::time::Duration;
@@ -654,9 +655,11 @@ impl AssetServerBuilder {
                 assets: Assets {
                     inner: Arc::new(Default::default()),
                     sender: context.sender().clone(),
-                    // TODO: why don't we init the asset server sys / usr dirs with the builder?
-                    sys_dir: Default::default(),
-                    usr_dir: Default::default(),
+                    paths: Rc::new(AssetsPaths {
+                        // TODO: why don't we init the asset server sys / usr dirs with the builder?
+                        sys_dir: Default::default(),
+                        usr_dir: Default::default(),
+                    }),
                 },
                 sync: 0,
                 sync_requested: 0,
@@ -702,7 +705,12 @@ impl AssetServerBuilder {
 }
 
 type UntypedLoader = Box<
-    dyn FnMut(&Path, UntypedAssetId, &Assets, &mut RuntimeContext) -> anyhow::Result<SyncQueueEntry>
+    dyn FnMut(
+            &Path,
+            UntypedAssetId,
+            &mut Assets,
+            &mut RuntimeContext,
+        ) -> anyhow::Result<SyncQueueEntry>
         + Send,
 >;
 
@@ -754,31 +762,34 @@ impl AssetServer {
 }
 
 fn on_init_event(state: &mut AssetServer, context: &mut RuntimeContext, event: &InitEvent) {
-    state.assets.sys_dir = event.sys_dir.clone();
-    state.assets.usr_dir = event.usr_dir.clone();
+    state.assets.paths = Rc::new(AssetsPaths {
+        sys_dir: event.sys_dir.clone(),
+        usr_dir: event.usr_dir.clone(),
+    });
+
     log::info!("assets created");
     context.sender().send(AssetsCreatedEvent {
         inner: state.assets.inner.clone(),
-        sys_dir: state.assets.sys_dir.clone(),
-        usr_dir: state.assets.usr_dir.clone(),
+        sys_dir: state.assets.paths.sys_dir.clone(),
+        usr_dir: state.assets.paths.usr_dir.clone(),
     });
 
     TimeServer::schedule(state.gc_schedule, GcAssetsEvent, context.sender());
 
     if let Some(notify) = &mut state.notify {
         log::info!("start watching assets for changes");
-        if let Err(e) = notify.watch(&state.assets.sys_dir) {
+        if let Err(e) = notify.watch(&state.assets.paths.sys_dir) {
             log::warn!(
                 "could not watch sys asset dir {}: {}",
-                state.assets.sys_dir.display(),
+                state.assets.paths.sys_dir.display(),
                 e
             )
         }
 
-        if let Err(e) = notify.watch(&state.assets.usr_dir) {
+        if let Err(e) = notify.watch(&state.assets.paths.usr_dir) {
             log::warn!(
                 "could not watch usr asset dir {}: {}",
-                state.assets.sys_dir.display(),
+                state.assets.paths.sys_dir.display(),
                 e
             )
         }
@@ -802,8 +813,9 @@ fn on_load_asset_event<T: 'static + Send + Sync>(
                 return;
             }
 
+            let paths = state.assets.paths.clone();
             let asset_dir = if let Some(asset_path) = event.id.uri().asset_path() {
-                state.assets.asset_dir(&asset_path.kind)
+                paths.asset_dir(&asset_path.kind)
             } else {
                 log::error!(
                     "Can't load asset without an asset path {}",
@@ -813,7 +825,7 @@ fn on_load_asset_event<T: 'static + Send + Sync>(
             };
 
             let sync_queue_entry =
-                match (loader)(asset_dir, event.id.untyped, &state.assets, context) {
+                match (loader)(asset_dir, event.id.untyped, &mut state.assets, context) {
                     Ok(ok) => ok,
                     Err(e) => {
                         // TODO: panic? -> this is probably required for LoadedAssetTables otherwise how to fail the loading?
@@ -901,29 +913,28 @@ fn on_notify_assets_event(
     let mut changed_assets: Vec<UntypedAssetId> = Vec::default();
     for changed in state.notify.as_mut().unwrap().changes_iter() {
         let assets = &state.assets;
-        let mut asset_path = some_or_continue!(assets.asset_path(&changed.path));
-        let asset_dir = assets.asset_dir(&asset_path.kind);
+        let mut asset_path = some_or_continue!(assets.paths.asset_path(&changed.path));
+        let asset_dir = assets.paths.asset_dir(&asset_path.kind);
         loop {
             changed_assets.extend(assets.asset_ids_for_path(asset_path).drain(..));
             // we check if any parent folder is an asset
             asset_path = some_or_break!(asset_path
                 .path
                 .parent()
-                .and_then(|p| assets.asset_path(&p.to_path(asset_dir))));
+                .and_then(|p| assets.paths.asset_path(&p.to_path(asset_dir))));
         }
     }
 
     for asset_id in changed_assets {
-        let asset_dir = state
-            .assets
-            .asset_dir(&asset_id.uri.asset_path().unwrap().kind);
+        let paths = state.assets.paths.clone();
+        let asset_dir = paths.asset_dir(&asset_id.uri.asset_path().unwrap().kind);
 
         let loader = state
             .loaders
             .get_mut(&asset_id.tid)
             .expect("asset loader for a reload");
 
-        let sync_queue_entry = match (loader)(asset_dir, asset_id, &state.assets, context) {
+        let sync_queue_entry = match (loader)(asset_dir, asset_id, &mut state.assets, context) {
             Ok(ok) => ok,
             Err(e) => {
                 log::error!(
@@ -956,13 +967,16 @@ pub struct AssetsCreatedEvent {
 }
 
 impl AssetsCreatedEvent {
+    /// usage of multiple assets in the same thread can result in deadlocks
     #[inline]
     pub fn assets(&self, sender: MessageSender) -> Assets {
         Assets {
             inner: self.inner.clone(),
             sender,
-            sys_dir: self.sys_dir.clone(),
-            usr_dir: self.usr_dir.clone(),
+            paths: Rc::new(AssetsPaths {
+                sys_dir: self.sys_dir.clone(),
+                usr_dir: self.usr_dir.clone(),
+            }),
         }
     }
 }
