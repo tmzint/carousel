@@ -93,7 +93,13 @@ impl PointerInputEvent {
 
     #[inline]
     pub fn ended(&self, kind: PointerKind) -> bool {
-        self.kind == kind && self.value.abs() < f32::EPSILON
+        self.kind == kind && self.value.abs() <= f32::EPSILON
+    }
+
+    #[inline]
+    pub fn started(&self, kind: PointerKind) -> bool {
+        // We currently only send started / ended events as we only support mouse
+        self.kind == kind && self.value.abs() > f32::EPSILON
     }
 }
 
