@@ -6,7 +6,7 @@ pub use crate::asset::{
     AssetsCreatedEvent, LoadAssetEvent, LoadedAssetId, StrongAssetId, WeakAssetId,
 };
 pub use crate::platform::action::{ActionState, ActionTrigger, ActionsConfig};
-pub use crate::platform::input::{MouseButton, PointerKind, ScrollDirection};
+pub use crate::platform::input::{Cursor, MouseButton, PointerKind, ScrollDirection, WorldCursor};
 pub use crate::platform::key::ScanCode;
 pub use crate::platform::message::{
     ActionEvent, CursorInputEvent, DisplayCreatedEvent, DisplayRenderResources,
