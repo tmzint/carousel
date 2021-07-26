@@ -229,6 +229,11 @@ impl Cursor {
     }
 
     #[inline]
+    pub fn cursor_rect(&self) -> [u32; 2] {
+        self.cursor_rect
+    }
+
+    #[inline]
     pub fn raw_transform(&self) -> Option<Vector2<f64>> {
         self.raw_transform
     }
