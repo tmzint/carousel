@@ -42,9 +42,10 @@ impl Camera {
     #[inline]
     pub fn relative_to_world(&self, transform: Vector2<f64>, base: Vector2<f32>) -> Point2<f64> {
         let scaled = self.projection.scaled(base);
+        let zoomed = scaled.zoomed();
         Point2::new(
-            scaled.rect.x as f64 * transform.x + self.eye.x as f64,
-            scaled.rect.y as f64 * transform.y + self.eye.y as f64,
+            zoomed.x as f64 * transform.x + self.eye.x as f64,
+            zoomed.y as f64 * transform.y + self.eye.y as f64,
         )
     }
 }
