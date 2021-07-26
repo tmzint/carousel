@@ -113,6 +113,8 @@ impl SetupState {
             .stack_layer(&ui_layer, &ui_camera)
             .finish();
 
+        std::mem::drop(assets);
+
         let running = RunningState {
             main_camera,
             main_layer,

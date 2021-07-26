@@ -92,6 +92,8 @@ impl SetupState {
         let asset = assets.load(AssetPath::sys("recursive.json"));
         let table = assets.load(AssetPath::sys("recursive"));
 
+        std::mem::drop(assets);
+
         let loading = LoadingState { asset, table };
         let loading_builder = resources.resource.loading_builder.clone();
         StateInstruction::pop_push(loading_builder.init_finish(resources, loading).unwrap())

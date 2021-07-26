@@ -23,7 +23,7 @@ use serde::de::{DeserializeOwned, Visitor};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::any::{Any, TypeId};
 use std::cmp::Ordering;
-use std::convert::{TryFrom, TryInto};
+use std::convert::TryFrom;
 use std::fmt::{Debug, Display, Formatter};
 use std::hash::Hasher;
 use std::marker::PhantomData;
@@ -352,7 +352,7 @@ impl Serialize for AssetUri {
 #[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd)]
 pub(crate) struct UntypedAssetId {
     // Optimization: use smaller hash that still guarantees no benign collisions
-    id: [u8; blake3::OUT_LEN],
+    id: [u8; 16],
     uri: AssetUri,
     tid: TypeId,
 }
@@ -374,13 +374,10 @@ impl UntypedAssetId {
         let mut hasher = Blake3StdHasher(blake3::Hasher::default());
         tid.hash(&mut hasher);
         uri.hash(&mut hasher);
-        let hash = hasher.0.finalize();
+        let mut id = [0; 16];
+        hasher.0.finalize_xof().fill(&mut id);
 
-        UntypedAssetId {
-            id: hash.into(),
-            tid,
-            uri,
-        }
+        UntypedAssetId { id, tid, uri }
     }
 }
 
@@ -393,11 +390,10 @@ impl std::hash::Hash for UntypedAssetId {
 
 impl Debug for UntypedAssetId {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        let id1 = u128::from_ne_bytes(self.id[..16].try_into().unwrap());
-        let id2 = u128::from_ne_bytes(self.id[16..].try_into().unwrap());
+        let id = u128::from_ne_bytes(self.id);
 
         f.debug_struct("UntypedAssetId")
-            .field("id", &format!("{:032x}{:032x}", id1, id2))
+            .field("id", &format!("{:032x}", id))
             .field("kind", &self.uri)
             .field("tid", &self.tid)
             .finish()
