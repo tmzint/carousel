@@ -75,6 +75,7 @@ pub struct Actions {
     current: IndexMap<Intern<String>, CurrentActionState>,
     buffer: Vec<ActionEvent>,
     tick: u64,
+    trigger_value_cache: Vec<(ActionTrigger, f32)>,
 }
 
 impl Actions {
@@ -102,51 +103,58 @@ impl Actions {
         //  this allows multiple actions to be fired per frame, do we want this?
         //  Start -> Release -> Start -> ...
         for input in inputs.queued_events() {
-            let (trigger, value) = match input {
+            match input {
                 InputEvent::Mouse(MouseInputEvent { button, value }) => {
-                    (ActionTrigger::Mouse(*button), *value)
+                    self.trigger_value_cache
+                        .push((ActionTrigger::Mouse(*button), *value));
                 }
                 InputEvent::Scroll(ScrollInputEvent { direction, value }) => {
-                    (ActionTrigger::Scroll(*direction), *value)
+                    self.trigger_value_cache
+                        .push((ActionTrigger::Scroll(*direction), *value));
+                    self.trigger_value_cache
+                        .push((ActionTrigger::Scroll(*direction), 0.0));
                 }
                 InputEvent::Key(KeyInputEvent { scan, value }) => {
-                    (ActionTrigger::Key(*scan), *value)
+                    self.trigger_value_cache
+                        .push((ActionTrigger::Key(*scan), *value));
                 }
                 InputEvent::Cursor(_) => {
                     continue;
                 }
             };
 
-            let action = *some_or_continue!(self.config.get(&trigger));
+            for (trigger, value) in self.trigger_value_cache.drain(..) {
+                let action = *some_or_continue!(self.config.get(&trigger));
 
-            let is_end = value.abs() <= f32::EPSILON;
-            if is_end {
-                self.current.remove(&action);
-                self.buffer.push(ActionEvent {
-                    name: action,
-                    state: ActionState::End,
-                    value: 0.0,
-                });
-
-                continue;
-            }
-
-            match self.current.entry(action) {
-                Entry::Occupied(mut entry) => {
-                    entry.get_mut().value = value;
-                }
-                Entry::Vacant(entry) => {
-                    entry.insert(CurrentActionState {
-                        state: ActionState::Start,
-                        value,
-                        tick: self.tick,
-                    });
-
+                let is_end = value.abs() <= f32::EPSILON;
+                if is_end {
+                    self.current.remove(&action);
                     self.buffer.push(ActionEvent {
                         name: action,
-                        state: ActionState::Start,
-                        value,
+                        state: ActionState::End,
+                        value: 0.0,
                     });
+
+                    continue;
+                }
+
+                match self.current.entry(action) {
+                    Entry::Occupied(mut entry) => {
+                        entry.get_mut().value = value;
+                    }
+                    Entry::Vacant(entry) => {
+                        entry.insert(CurrentActionState {
+                            state: ActionState::Start,
+                            value,
+                            tick: self.tick,
+                        });
+
+                        self.buffer.push(ActionEvent {
+                            name: action,
+                            state: ActionState::Start,
+                            value,
+                        });
+                    }
                 }
             }
         }
