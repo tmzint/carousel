@@ -351,7 +351,6 @@ impl Serialize for AssetUri {
 
 #[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd)]
 pub(crate) struct UntypedAssetId {
-    // Optimization: use smaller hash that still guarantees no benign collisions
     id: [u8; 16],
     uri: AssetUri,
     tid: TypeId,
