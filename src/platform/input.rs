@@ -259,6 +259,7 @@ impl Cursor {
     }
 }
 
+#[derive(Debug)]
 pub struct WorldCursor<'a> {
     cursor: &'a Cursor,
     world_transform: Option<Point2<f64>>,
