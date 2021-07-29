@@ -12,10 +12,61 @@ use std::cell::RefCell;
 use std::marker::PhantomData;
 use std::ops::DerefMut;
 
+pub struct AssetCursorChild<'a, 'b, 'c> {
+    children: &'c mut AssetCursorChildren<'a, 'b>,
+    asset_path: AssetPath,
+}
+
+impl<'a, 'b, 'c> AssetCursorChild<'a, 'b, 'c> {
+    #[inline]
+    pub fn asset_path(&self) -> &AssetPath {
+        &self.asset_path
+    }
+
+    #[inline]
+    pub fn read(&self) -> anyhow::Result<Vec<u8>> {
+        let path = self.asset_path.path.to_path(
+            self.children
+                .cursor
+                .assets
+                .paths
+                .asset_dir(&self.asset_path.kind),
+        );
+        log::info!("reading asset from: {}", path.display());
+        let bytes = std::fs::read(&path)?;
+        Ok(bytes)
+    }
+
+    #[inline]
+    pub fn extension(&self) -> Option<&str> {
+        self.asset_path.path.extension()
+    }
+}
+
+pub struct AssetCursorChildren<'a, 'b> {
+    cursor: &'b mut AssetCursor<'a>,
+    children: Vec<AssetPath>,
+}
+
+impl<'a, 'b> AssetCursorChildren<'a, 'b> {
+    #[inline]
+    pub fn next<'c>(&'c mut self) -> Option<AssetCursorChild<'a, 'b, 'c>> {
+        self.children.pop().map(move |ap| AssetCursorChild {
+            children: self,
+            asset_path: ap,
+        })
+    }
+
+    #[inline]
+    pub fn len(&self) -> usize {
+        self.children.len()
+    }
+}
+
 pub struct AssetCursor<'a> {
     pub(crate) asset_path: AssetPath,
     pub(crate) assets: &'a mut Assets,
-    // TODO: allow multiple assets? -> include mut ref to sync queue assets (for table / collections)
+    // TODO: allow multiple assets? -> include mut ref to sync queue assets (for table / collections)?
 }
 
 impl<'a> AssetCursor<'a> {
@@ -51,7 +102,7 @@ impl<'a> AssetCursor<'a> {
     }
 
     #[inline]
-    pub fn children(&self) -> anyhow::Result<Vec<AssetPath>> {
+    pub fn children<'b>(&'b mut self) -> anyhow::Result<AssetCursorChildren<'a, 'b>> {
         let mut paths = Vec::new();
 
         let path = self
@@ -74,7 +125,12 @@ impl<'a> AssetCursor<'a> {
             }
         }
 
-        Ok(paths)
+        paths.reverse();
+
+        Ok(AssetCursorChildren {
+            cursor: self,
+            children: paths,
+        })
     }
 }
 
@@ -282,15 +338,15 @@ impl<T: Send + Sync + 'static> AssetLoader for AssetTableLoader<T, Weak> {
     type Asset = AssetTable<T, Weak>;
 
     fn load<'a>(&self, cursor: &mut AssetCursor<'a>) -> anyhow::Result<Self::Asset> {
-        let underlying = cursor
-            .children()?
-            .into_iter()
-            .map(|asset_path| {
-                let path = asset_path.path;
-                let asset_id = WeakAssetId::new(AssetUri::AssetPath(asset_path));
-                (path, asset_id)
-            })
-            .collect();
+        let mut underlying = IndexMap::default();
+
+        let mut children = cursor.children()?;
+        while let Some(child) = children.next() {
+            underlying.insert(
+                child.asset_path.path,
+                WeakAssetId::new(AssetUri::AssetPath(child.asset_path)),
+            );
+        }
 
         Ok(AssetTable(underlying))
     }
