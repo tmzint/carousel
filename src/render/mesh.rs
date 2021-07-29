@@ -1,9 +1,8 @@
-use crate::asset::loader::AssetLoader;
-use crate::asset::storage::{Assets, AssetsClient};
+use crate::asset::loader::{AssetCursor, AssetLoader};
+use crate::asset::storage::AssetsClient;
 use crate::asset::{StrongAssetId, WeakAssetId};
 use crate::render::buffer::Vertex;
 use crate::util::HashMap;
-use relative_path::RelativePath;
 use serde::Deserialize;
 use uuid::Uuid;
 use wgpu::util::DeviceExt;
@@ -35,19 +34,12 @@ impl AssetLoader for MeshLoader {
     type Asset = Mesh;
 
     #[inline]
-    fn deserialize<'a>(
-        &self,
-        path: &'a RelativePath,
-        bytes: Vec<u8>,
-        _assets: &'a mut Assets,
-    ) -> anyhow::Result<Self::Asset> {
-        let extension = path.extension().ok_or_else(|| {
-            anyhow::anyhow!(
-                "could not derive file type for serde asset loader: {}",
-                path
-            )
+    fn load<'a>(&self, cursor: &mut AssetCursor<'a>) -> anyhow::Result<Self::Asset> {
+        let extension = cursor.extension().ok_or_else(|| {
+            anyhow::anyhow!("could not derive file type for serde asset loader: {}",)
         })?;
 
+        let bytes = cursor.read()?;
         let asset = match extension {
             "json" => serde_json::from_slice(&bytes)?,
             s => Err(anyhow::anyhow!(

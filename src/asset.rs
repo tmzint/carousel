@@ -2,7 +2,7 @@ pub mod loader;
 pub mod notify;
 pub mod storage;
 
-use crate::asset::loader::{AssetLoader, AssetTableLoader, SerdeAssetLoader};
+use crate::asset::loader::{AssetCursor, AssetLoader, AssetTableLoader, SerdeAssetLoader};
 use crate::asset::notify::AssetChangeNotify;
 use crate::asset::storage::{Assets, AssetsPaths, InnerAssets};
 use crate::platform::action::ActionsConfig;
@@ -28,7 +28,7 @@ use std::fmt::{Debug, Display, Formatter};
 use std::hash::Hasher;
 use std::marker::PhantomData;
 use std::ops::Deref;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::rc::Rc;
 use std::str::FromStr;
 use std::sync::Arc;
@@ -670,12 +670,16 @@ impl AssetServerBuilder {
     unsafe fn insert_loader<T: AssetLoader>(&mut self, loader: T) {
         self.loaders.insert(
             TypeId::of::<T::Asset>(),
-            Box::new(move |ap, id, a, es| {
-                let rp = id
+            Box::new(move |id, a, es| {
+                let asset_path = id
                     .uri
                     .asset_path()
                     .ok_or_else(|| anyhow::anyhow!("asset path to load not found"))?;
-                let asset = loader.load(ap, rp.path.deref(), a)?;
+                let mut cursor = AssetCursor {
+                    asset_path,
+                    assets: a,
+                };
+                let asset = loader.load(&mut cursor)?;
                 let typed_id: WeakAssetId<T::Asset> = WeakAssetId::from_untyped(id);
 
                 let loaded_event = es.sender().prepare(AssetEvent {
@@ -700,12 +704,7 @@ impl AssetServerBuilder {
 }
 
 type UntypedLoader = Box<
-    dyn FnMut(
-            &Path,
-            UntypedAssetId,
-            &mut Assets,
-            &mut RuntimeContext,
-        ) -> anyhow::Result<SyncQueueEntry>
+    dyn FnMut(UntypedAssetId, &mut Assets, &mut RuntimeContext) -> anyhow::Result<SyncQueueEntry>
         + Send,
 >;
 
@@ -808,27 +807,15 @@ fn on_load_asset_event<T: 'static + Send + Sync>(
                 return;
             }
 
-            let paths = state.assets.paths.clone();
-            let asset_dir = if let Some(asset_path) = event.id.uri().asset_path() {
-                paths.asset_dir(&asset_path.kind)
-            } else {
-                log::error!(
-                    "Can't load asset without an asset path {}",
-                    event.id.untyped.uri
-                );
-                return;
+            let sync_queue_entry = match (loader)(event.id.untyped, &mut state.assets, context) {
+                Ok(ok) => ok,
+                Err(e) => {
+                    // TODO: panic? -> this is probably required for LoadedAssetTables otherwise how to fail the loading?
+                    //  -> dependency registration?
+                    log::error!("Could not load asset {}: {}", event.id.untyped.uri, e);
+                    return;
+                }
             };
-
-            let sync_queue_entry =
-                match (loader)(asset_dir, event.id.untyped, &mut state.assets, context) {
-                    Ok(ok) => ok,
-                    Err(e) => {
-                        // TODO: panic? -> this is probably required for LoadedAssetTables otherwise how to fail the loading?
-                        //  -> dependency registration?
-                        log::error!("Could not load asset {}: {}", event.id.untyped.uri, e);
-                        return;
-                    }
-                };
 
             state.sync_queue_asset.push(sync_queue_entry);
             state.sync_requested += 1;
@@ -921,15 +908,12 @@ fn on_notify_assets_event(
     }
 
     for asset_id in changed_assets {
-        let paths = state.assets.paths.clone();
-        let asset_dir = paths.asset_dir(&asset_id.uri.asset_path().unwrap().kind);
-
         let loader = state
             .loaders
             .get_mut(&asset_id.tid)
             .expect("asset loader for a reload");
 
-        let sync_queue_entry = match (loader)(asset_dir, asset_id, &mut state.assets, context) {
+        let sync_queue_entry = match (loader)(asset_id, &mut state.assets, context) {
             Ok(ok) => ok,
             Err(e) => {
                 log::error!(

@@ -11,37 +11,77 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::cell::RefCell;
 use std::marker::PhantomData;
 use std::ops::DerefMut;
-use std::path::Path;
+
+pub struct AssetCursor<'a> {
+    pub(crate) asset_path: AssetPath,
+    pub(crate) assets: &'a mut Assets,
+    // TODO: allow multiple assets? -> include mut ref to sync queue assets (for table / collections)
+}
+
+impl<'a> AssetCursor<'a> {
+    #[inline]
+    pub fn asset_path(&self) -> &AssetPath {
+        &self.asset_path
+    }
+
+    #[inline]
+    pub fn assets(&self) -> &Assets {
+        self.assets
+    }
+
+    #[inline]
+    pub fn assets_mut(&mut self) -> &mut Assets {
+        self.assets
+    }
+
+    #[inline]
+    pub fn read(&self) -> anyhow::Result<Vec<u8>> {
+        let path = self
+            .asset_path
+            .path
+            .to_path(self.assets.paths.asset_dir(&self.asset_path.kind));
+        log::info!("reading asset from: {}", path.display());
+        let bytes = std::fs::read(&path)?;
+        Ok(bytes)
+    }
+
+    #[inline]
+    pub fn extension(&self) -> Option<&str> {
+        self.asset_path.path.extension()
+    }
+
+    #[inline]
+    pub fn children(&self) -> anyhow::Result<Vec<AssetPath>> {
+        let mut paths = Vec::new();
+
+        let path = self
+            .asset_path
+            .path
+            .to_path(self.assets.paths.asset_dir(&self.asset_path.kind));
+        let dir = std::fs::read_dir(path)?;
+        for entry in dir {
+            let entry = entry?;
+            let entry_path = entry.path();
+
+            // TODO: configurable filter (glob?), also see lower entry_path.file_name()
+            if !entry_path.is_file() {
+                continue;
+            }
+
+            if let Some(file_name) = entry_path.file_name().and_then(|s| s.to_str()) {
+                let entry_rel_path = Intern::new(self.asset_path.path.join(file_name));
+                paths.push(AssetPath::new(self.asset_path.kind, entry_rel_path));
+            }
+        }
+
+        Ok(paths)
+    }
+}
 
 pub trait AssetLoader: Sized + Send + Sync + 'static {
     type Asset: Sized + Send + Sync + 'static;
 
-    #[inline]
-    fn load<'a>(
-        &self,
-        asset_dir: &'a Path,
-        rel_path: &'a RelativePath,
-        assets: &'a mut Assets,
-    ) -> anyhow::Result<Self::Asset> {
-        // TODO: give struct that can read assets and the asset dirs instead of separation into two methods
-        //  required for inline assets?
-        let path = rel_path.to_path(asset_dir);
-        log::info!(
-            "loading asset of {} from: {}",
-            std::any::type_name::<Self::Asset>(),
-            path.display()
-        );
-
-        let bytes = std::fs::read(&path)?;
-        self.deserialize(rel_path, bytes, assets)
-    }
-
-    fn deserialize<'a>(
-        &self,
-        path: &'a RelativePath,
-        bytes: Vec<u8>,
-        assets: &'a mut Assets,
-    ) -> anyhow::Result<Self::Asset>;
+    fn load<'a>(&self, cursor: &mut AssetCursor<'a>) -> anyhow::Result<Self::Asset>;
 }
 
 // Required to provide serde deserializer context for recursive asset loading
@@ -59,22 +99,19 @@ impl<T: DeserializeOwned + Send + Sync + 'static> AssetLoader for SerdeAssetLoad
     type Asset = T;
 
     #[inline]
-    fn deserialize<'a>(
-        &self,
-        path: &'a RelativePath,
-        bytes: Vec<u8>,
-        assets: &'a mut Assets,
-    ) -> anyhow::Result<Self::Asset> {
-        let extension = path.extension().ok_or_else(|| {
+    fn load<'a>(&self, cursor: &mut AssetCursor<'a>) -> anyhow::Result<Self::Asset> {
+        let bytes = cursor.read()?;
+
+        let extension = cursor.extension().ok_or_else(|| {
             anyhow::anyhow!(
                 "could not derive file type for serde asset loader: {}",
-                path
+                cursor.asset_path
             )
         })?;
 
         SERDE_THREAD_LOCAL.with(|stl| {
             *stl.borrow_mut() = Some(SerdeThreadLocal {
-                assets: assets.to_owned(),
+                assets: cursor.assets.to_owned(),
             });
 
             let asset = match extension {
@@ -244,54 +281,18 @@ pub struct AssetTableLoader<T, S> {
 impl<T: Send + Sync + 'static> AssetLoader for AssetTableLoader<T, Weak> {
     type Asset = AssetTable<T, Weak>;
 
-    #[inline]
-    fn load<'a>(
-        &self,
-        asset_dir: &'a Path,
-        rel_path: &'a RelativePath,
-        assets: &'a mut Assets,
-    ) -> anyhow::Result<Self::Asset> {
-        let path = rel_path.to_path(asset_dir);
-        log::info!(
-            "loading asset table of {} from: {}",
-            std::any::type_name::<T>(),
-            path.display()
-        );
-
-        let asset_path_kind = assets
-            .paths
-            .asset_path_kind(asset_dir)
-            .expect("asset dir to be known");
-
-        let mut underlying = IndexMap::default();
-        let dir = std::fs::read_dir(path)?;
-        for entry in dir {
-            let entry = entry?;
-            let entry_path = entry.path();
-            if !entry_path.is_file() {
-                continue;
-            }
-
-            if let Some(file_name) = entry_path.file_name().and_then(|s| s.to_str()) {
-                let entry_rel_path = Intern::new(rel_path.join(file_name));
-                let entry_asset_id = WeakAssetId::new(AssetUri::AssetPath(AssetPath::new(
-                    asset_path_kind,
-                    entry_rel_path,
-                )));
-                underlying.insert(entry_rel_path, entry_asset_id);
-            }
-        }
+    fn load<'a>(&self, cursor: &mut AssetCursor<'a>) -> anyhow::Result<Self::Asset> {
+        let underlying = cursor
+            .children()?
+            .into_iter()
+            .map(|asset_path| {
+                let path = asset_path.path;
+                let asset_id = WeakAssetId::new(AssetUri::AssetPath(asset_path));
+                (path, asset_id)
+            })
+            .collect();
 
         Ok(AssetTable(underlying))
-    }
-
-    fn deserialize<'a>(
-        &self,
-        _path: &'a RelativePath,
-        _bytes: Vec<u8>,
-        _assets: &'a mut Assets,
-    ) -> anyhow::Result<Self::Asset> {
-        unreachable!();
     }
 }
 
@@ -299,32 +300,18 @@ impl<T: Send + Sync + 'static> AssetLoader for AssetTableLoader<T, Strong> {
     type Asset = AssetTable<T, Strong>;
 
     #[inline]
-    fn load<'a>(
-        &self,
-        asset_dir: &'a Path,
-        rel_path: &'a RelativePath,
-        assets: &'a mut Assets,
-    ) -> anyhow::Result<Self::Asset> {
+    fn load<'a>(&self, cursor: &mut AssetCursor<'a>) -> anyhow::Result<Self::Asset> {
         let weak_loader: AssetTableLoader<T, Weak> = AssetTableLoader::default();
-        let weak_table = weak_loader.load(asset_dir, rel_path, assets)?;
+        let weak_table = weak_loader.load(cursor)?;
 
-        let assets = assets.client();
-        let mut strong_table = IndexMap::default();
-        for (key, weak) in weak_table.0 {
-            let strong = assets.upgrade(&weak);
-            strong_table.insert(key, strong);
-        }
+        let assets = cursor.assets.client();
+        let strong_table = weak_table
+            .0
+            .into_iter()
+            .map(|(key, weak)| (key, assets.upgrade(&weak)))
+            .collect();
 
         Ok(AssetTable(strong_table))
-    }
-
-    fn deserialize<'a>(
-        &self,
-        _path: &'a RelativePath,
-        _bytes: Vec<u8>,
-        _assets: &'a mut Assets,
-    ) -> anyhow::Result<Self::Asset> {
-        unreachable!();
     }
 }
 

@@ -1,12 +1,11 @@
-use crate::asset::loader::AssetLoader;
-use crate::asset::storage::{Assets, AssetsClient};
+use crate::asset::loader::{AssetCursor, AssetLoader};
+use crate::asset::storage::AssetsClient;
 use crate::asset::{StrongAssetId, WeakAssetId};
 use crate::render::buffer::{Instance, Vertex};
 use crate::render::view::RealizedView;
 use crate::render::Samples;
 use crate::some_or_return;
 use crate::util::{HashMap, OrderWindow};
-use relative_path::RelativePath;
 use serde::Deserialize;
 use std::borrow::Cow;
 use std::collections::BTreeSet;
@@ -178,12 +177,8 @@ impl AssetLoader for WGSLSourceLoader {
     type Asset = WGSLSource;
 
     #[inline]
-    fn deserialize<'a>(
-        &self,
-        _path: &'a RelativePath,
-        bytes: Vec<u8>,
-        _assets: &'a mut Assets,
-    ) -> anyhow::Result<Self::Asset> {
+    fn load<'a>(&self, cursor: &mut AssetCursor<'a>) -> anyhow::Result<Self::Asset> {
+        let bytes = cursor.read()?;
         let shader_src = String::from_utf8(bytes)?;
         Ok(WGSLSource(shader_src.into()))
     }

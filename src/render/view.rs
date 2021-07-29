@@ -1,9 +1,9 @@
-use crate::asset::storage::{Assets, AssetsClient};
+use crate::asset::loader::AssetCursor;
+use crate::asset::storage::AssetsClient;
 use crate::asset::{StrongAssetId, WeakAssetId};
 use crate::prelude::AssetLoader;
 use crate::util::{HashMap, OrderWindow};
 use image::{DynamicImage, GenericImageView, ImageBuffer};
-use relative_path::RelativePath;
 use serde::Deserialize;
 use std::collections::BTreeSet;
 use std::num::NonZeroU32;
@@ -203,12 +203,8 @@ impl AssetLoader for ImageLoader {
     type Asset = DynamicImage;
 
     #[inline]
-    fn deserialize<'a>(
-        &self,
-        _path: &'a RelativePath,
-        bytes: Vec<u8>,
-        _assets: &'a mut Assets,
-    ) -> anyhow::Result<Self::Asset> {
+    fn load<'a>(&self, cursor: &mut AssetCursor<'a>) -> anyhow::Result<Self::Asset> {
+        let bytes = cursor.read()?;
         let img = image::load_from_memory(&bytes)?;
         Ok(img)
     }
