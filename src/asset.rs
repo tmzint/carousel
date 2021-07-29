@@ -658,7 +658,7 @@ impl AssetServerBuilder {
                 },
                 sync: 0,
                 sync_requested: 0,
-                sync_queue_asset: Default::default(),
+                sync_queue: Default::default(),
                 sync_queue_max,
                 gc_at: 0,
                 gc_schedule,
@@ -670,42 +670,30 @@ impl AssetServerBuilder {
     unsafe fn insert_loader<T: AssetLoader>(&mut self, loader: T) {
         self.loaders.insert(
             TypeId::of::<T::Asset>(),
-            Box::new(move |id, a, es| {
+            Box::new(move |id, a, sq| {
                 let asset_path = id
                     .uri
                     .asset_path()
                     .ok_or_else(|| anyhow::anyhow!("asset path to load not found"))?;
+
                 let mut cursor = AssetCursor {
                     asset_path,
                     assets: a,
+                    sync_queue: sq,
                 };
+
                 let asset = loader.load(&mut cursor)?;
                 let typed_id: WeakAssetId<T::Asset> = WeakAssetId::from_untyped(id);
+                cursor.push_asset(typed_id, asset);
 
-                let loaded_event = es.sender().prepare(AssetEvent {
-                    id: typed_id,
-                    kind: AssetEventKind::Load,
-                });
-
-                let unloaded_event = es.sender().prepare(AssetEvent {
-                    id: typed_id,
-                    kind: AssetEventKind::Unload,
-                });
-
-                Ok(SyncQueueEntry {
-                    asset_id: id,
-                    asset: Box::new(asset),
-                    loaded_event,
-                    unloaded_event,
-                })
+                Ok(())
             }),
         );
     }
 }
 
 type UntypedLoader = Box<
-    dyn FnMut(UntypedAssetId, &mut Assets, &mut RuntimeContext) -> anyhow::Result<SyncQueueEntry>
-        + Send,
+    dyn FnMut(UntypedAssetId, &mut Assets, &mut Vec<SyncQueueEntry>) -> anyhow::Result<()> + Send,
 >;
 
 type UntypedAsset = Box<dyn std::any::Any + 'static + Send + Sync>;
@@ -722,7 +710,7 @@ pub struct AssetServer {
     assets: Assets,
     sync: u64,
     sync_requested: u64,
-    sync_queue_asset: Vec<SyncQueueEntry>,
+    sync_queue: Vec<SyncQueueEntry>,
     sync_queue_max: usize,
     gc_at: usize,
     gc_schedule: Duration,
@@ -807,7 +795,7 @@ fn on_load_asset_event<T: 'static + Send + Sync>(
                 return;
             }
 
-            let sync_queue_entry = match (loader)(event.id.untyped, &mut state.assets, context) {
+            match (loader)(event.id.untyped, &mut state.assets, &mut state.sync_queue) {
                 Ok(ok) => ok,
                 Err(e) => {
                     // TODO: panic? -> this is probably required for LoadedAssetTables otherwise how to fail the loading?
@@ -817,7 +805,6 @@ fn on_load_asset_event<T: 'static + Send + Sync>(
                 }
             };
 
-            state.sync_queue_asset.push(sync_queue_entry);
             state.sync_requested += 1;
             context.sender().send(SyncAssetEvent {
                 sync: state.sync_requested,
@@ -840,7 +827,7 @@ fn on_store_asset_event(
         loaded_event: event.load_event.lock().take(),
         unloaded_event: event.unload_event.lock().take(),
     };
-    state.sync_queue_asset.push(sync_queue_entry);
+    state.sync_queue.push(sync_queue_entry);
     state.sync_requested += 1;
     context.sender().send(SyncAssetEvent {
         sync: state.sync_requested,
@@ -852,7 +839,7 @@ fn on_sync_asset_event(
     _context: &mut RuntimeContext,
     event: &SyncAssetEvent,
 ) {
-    if state.sync_requested != event.sync && state.sync_queue_asset.len() < state.sync_queue_max {
+    if state.sync_requested != event.sync && state.sync_queue.len() < state.sync_queue_max {
         log::debug!(
             "skip intermediate asset sync of {} as {} is already requested",
             event.sync,
@@ -861,7 +848,7 @@ fn on_sync_asset_event(
         return;
     }
 
-    if state.sync_queue_asset.is_empty() {
+    if state.sync_queue.is_empty() {
         return;
     }
 
@@ -872,7 +859,7 @@ fn on_sync_asset_event(
     );
     state.sync = state.sync_requested;
 
-    unsafe { state.assets.extend(state.sync_queue_asset.drain(..)) };
+    unsafe { state.assets.extend(state.sync_queue.drain(..)) };
 }
 
 fn on_gc_assets_event(
@@ -913,7 +900,7 @@ fn on_notify_assets_event(
             .get_mut(&asset_id.tid)
             .expect("asset loader for a reload");
 
-        let sync_queue_entry = match (loader)(asset_id, &mut state.assets, context) {
+        match (loader)(asset_id, &mut state.assets, &mut state.sync_queue) {
             Ok(ok) => ok,
             Err(e) => {
                 log::error!(
@@ -925,7 +912,6 @@ fn on_notify_assets_event(
             }
         };
 
-        state.sync_queue_asset.push(sync_queue_entry);
         state.sync_requested += 1;
         context.sender().send(SyncAssetEvent {
             sync: state.sync_requested,

@@ -1,6 +1,7 @@
 use crate::asset::storage::{Assets, AssetsClient};
 use crate::asset::{
-    AssetId, AssetPath, AssetUri, AssetUriVisitor, Loaded, Strong, StrongAssetId, Weak, WeakAssetId,
+    AssetEvent, AssetEventKind, AssetId, AssetPath, AssetUri, AssetUriVisitor, Loaded, Strong,
+    StrongAssetId, SyncQueueEntry, Weak, WeakAssetId,
 };
 use crate::util::IndexMap;
 use internment::Intern;
@@ -66,7 +67,7 @@ impl<'a, 'b> AssetCursorChildren<'a, 'b> {
 pub struct AssetCursor<'a> {
     pub(crate) asset_path: AssetPath,
     pub(crate) assets: &'a mut Assets,
-    // TODO: allow multiple assets? -> include mut ref to sync queue assets (for table / collections)?
+    pub(crate) sync_queue: &'a mut Vec<SyncQueueEntry>,
 }
 
 impl<'a> AssetCursor<'a> {
@@ -131,6 +132,26 @@ impl<'a> AssetCursor<'a> {
             cursor: self,
             children: paths,
         })
+    }
+
+    #[inline]
+    pub fn push_asset<T: 'static + Send + Sync>(&mut self, id: WeakAssetId<T>, asset: T) {
+        let loaded_event = self.assets.sender.prepare(AssetEvent {
+            id,
+            kind: AssetEventKind::Load,
+        });
+
+        let unloaded_event = self.assets.sender.prepare(AssetEvent {
+            id,
+            kind: AssetEventKind::Unload,
+        });
+
+        self.sync_queue.push(SyncQueueEntry {
+            asset_id: id.untyped,
+            asset: Box::new(asset),
+            loaded_event,
+            unloaded_event,
+        });
     }
 }
 
