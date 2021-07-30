@@ -19,6 +19,7 @@ use std::hash::{Hash, Hasher};
 use uuid::Uuid;
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Deserialize, Serialize, Hash)]
+#[serde(rename_all = "camelCase")]
 pub enum LineCap {
     Butt,
     Square,
@@ -26,6 +27,7 @@ pub enum LineCap {
 }
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Deserialize, Serialize, Hash)]
+#[serde(rename_all = "camelCase")]
 pub enum LineJoin {
     Miter,
     MiterClip,
@@ -34,6 +36,7 @@ pub enum LineJoin {
 }
 
 #[derive(Debug, Copy, Clone, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct StrokeOptions {
     pub start_cap: LineCap,
     pub end_cap: LineCap,
@@ -68,6 +71,7 @@ impl Hash for StrokeOptions {
 }
 
 #[derive(Debug, Copy, Clone, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub enum Segment {
     Begin(Point2<f32>),
     Line(Point2<f32>),

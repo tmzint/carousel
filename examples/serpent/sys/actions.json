@@ -1,6 +1,6 @@
 [
-  [{"input":  "Key", "select":  "W"}, "MoveUp"],
-  [{"input":  "Key", "select":  "A"}, "MoveLeft"],
-  [{"input":  "Key", "select":  "S"}, "MoveDown"],
-  [{"input":  "Key", "select":  "D"}, "MoveRight"]
+  [{"input":  "key", "select":  "w"}, "moveUp"],
+  [{"input":  "key", "select":  "a"}, "moveLeft"],
+  [{"input":  "key", "select":  "s"}, "moveDown"],
+  [{"input":  "key", "select":  "d"}, "moveRight"]
 ]

@@ -140,12 +140,14 @@ impl LoadingState {
 }
 
 #[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct RecursiveAsset {
     eager: Vec<StrongAssetId<ChildAsset>>,
     lazy: Vec<WeakAssetId<ChildAsset>>,
 }
 
 #[derive(Deserialize, Debug)]
+#[serde(rename_all = "camelCase")]
 pub struct ChildAsset {
     child: String,
 }

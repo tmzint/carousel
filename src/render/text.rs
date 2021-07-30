@@ -518,6 +518,7 @@ struct Bounds {
 
 #[repr(u8)]
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Hash, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub enum HorizontalAlignment {
     Left,
     Right,
@@ -534,6 +535,7 @@ impl Default for HorizontalAlignment {
 
 #[repr(u8)]
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Hash, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub enum VerticalAlignment {
     Top,
     Center,

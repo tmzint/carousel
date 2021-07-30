@@ -154,10 +154,10 @@ impl GameRunState {
         event: &ActionEvent,
     ) -> StateInstruction<State> {
         let new_direction = match event.name.as_str() {
-            "MoveUp" => Vector2::new(0, 1),
-            "MoveLeft" => Vector2::new(-1, 0),
-            "MoveDown" => Vector2::new(0, -1),
-            "MoveRight" => Vector2::new(1, 0),
+            "moveUp" => Vector2::new(0, 1),
+            "moveLeft" => Vector2::new(-1, 0),
+            "moveDown" => Vector2::new(0, -1),
+            "moveRight" => Vector2::new(1, 0),
             _ => {
                 return StateInstruction::Stay;
             }

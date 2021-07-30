@@ -11,7 +11,7 @@ use std::iter::FromIterator;
 use std::ops::{Deref, DerefMut};
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Hash, Serialize, Deserialize)]
-#[serde(tag = "input", content = "select")]
+#[serde(tag = "input", content = "select", rename_all = "camelCase")]
 pub enum ActionTrigger {
     Mouse(MouseButton),
     Scroll(ScrollDirection),

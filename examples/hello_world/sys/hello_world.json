@@ -1,5 +1,5 @@
 {
   "image": "sys://hello_world.png",
-  "magFilter": "Nearest",
-  "minFilter": "Nearest"
+  "magFilter": "nearest",
+  "minFilter": "nearest"
 }

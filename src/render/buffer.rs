@@ -2,6 +2,7 @@ use serde::Deserialize;
 
 #[repr(C)]
 #[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable, PartialEq, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct Vertex {
     pub position: [f32; 3],
     pub tex_coords: [f32; 2],

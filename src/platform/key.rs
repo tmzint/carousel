@@ -32,6 +32,7 @@ use std::convert::TryFrom;
 /// After USB HID Usage Tables document at http://www.usb.org/developers/hidpage/Hut1_12v2.pdf
 #[repr(u8)]
 #[derive(Copy, Clone, Eq, PartialEq, Debug, Hash, Serialize, Deserialize, TryFromPrimitive)]
+#[serde(rename_all = "camelCase")]
 pub enum ScanCode {
     A = 4,
     B,

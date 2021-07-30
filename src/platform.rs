@@ -46,6 +46,7 @@ impl Default for DisplayConfig {
 }
 
 #[derive(Debug, Copy, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub enum Fullscreen {
     Windowed,
     Borderless,

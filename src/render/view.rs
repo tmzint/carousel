@@ -212,6 +212,7 @@ impl AssetLoader for ImageLoader {
 
 #[repr(u8)]
 #[derive(Copy, Clone, Eq, PartialEq, Hash, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub enum FilterMode {
     Nearest = 0,
     Linear = 1,
