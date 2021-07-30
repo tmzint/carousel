@@ -1,7 +1,7 @@
-use crate::asset::storage::{Assets, AssetsClient};
+use crate::asset::storage::{Assets, AssetsClient, RegisterAssetResult};
 use crate::asset::{
-    AssetEvent, AssetEventKind, AssetId, AssetPath, AssetUri, AssetUriVisitor, Loaded, Strong,
-    StrongAssetId, SyncQueueEntry, Weak, WeakAssetId,
+    AssetId, AssetPath, AssetUri, AssetUriVisitor, DependencyQueueEntry, Loaded, LoadedAssetId,
+    Strong, StrongAssetId, SyncQueueEntry, Weak, WeakAssetId,
 };
 use crate::util::IndexMap;
 use internment::Intern;
@@ -13,37 +13,6 @@ use std::cell::RefCell;
 use std::marker::PhantomData;
 use std::ops::DerefMut;
 
-pub struct AssetCursorChild<'a, 'b, 'c> {
-    children: &'c mut AssetCursorChildren<'a, 'b>,
-    asset_path: AssetPath,
-}
-
-impl<'a, 'b, 'c> AssetCursorChild<'a, 'b, 'c> {
-    #[inline]
-    pub fn asset_path(&self) -> &AssetPath {
-        &self.asset_path
-    }
-
-    #[inline]
-    pub fn read(&self) -> anyhow::Result<Vec<u8>> {
-        let path = self.asset_path.path.to_path(
-            self.children
-                .cursor
-                .assets
-                .paths
-                .asset_dir(&self.asset_path.kind),
-        );
-        log::info!("reading asset from: {}", path.display());
-        let bytes = std::fs::read(&path)?;
-        Ok(bytes)
-    }
-
-    #[inline]
-    pub fn extension(&self) -> Option<&str> {
-        self.asset_path.path.extension()
-    }
-}
-
 pub struct AssetCursorChildren<'a, 'b> {
     cursor: &'b mut AssetCursor<'a>,
     children: Vec<AssetPath>,
@@ -51,10 +20,12 @@ pub struct AssetCursorChildren<'a, 'b> {
 
 impl<'a, 'b> AssetCursorChildren<'a, 'b> {
     #[inline]
-    pub fn next<'c>(&'c mut self) -> Option<AssetCursorChild<'a, 'b, 'c>> {
-        self.children.pop().map(move |ap| AssetCursorChild {
-            children: self,
+    pub fn next(&mut self) -> Option<AssetCursor> {
+        self.children.pop().map(move |ap| AssetCursor {
             asset_path: ap,
+            assets: self.cursor.assets,
+            sync_queue: self.cursor.sync_queue,
+            dependency_queue: self.cursor.dependency_queue,
         })
     }
 
@@ -68,22 +39,13 @@ pub struct AssetCursor<'a> {
     pub(crate) asset_path: AssetPath,
     pub(crate) assets: &'a mut Assets,
     pub(crate) sync_queue: &'a mut Vec<SyncQueueEntry>,
+    pub(crate) dependency_queue: &'a mut Vec<DependencyQueueEntry>,
 }
 
 impl<'a> AssetCursor<'a> {
     #[inline]
     pub fn asset_path(&self) -> &AssetPath {
         &self.asset_path
-    }
-
-    #[inline]
-    pub fn assets(&self) -> &Assets {
-        self.assets
-    }
-
-    #[inline]
-    pub fn assets_mut(&mut self) -> &mut Assets {
-        self.assets
     }
 
     #[inline]
@@ -135,37 +97,71 @@ impl<'a> AssetCursor<'a> {
     }
 
     #[inline]
-    pub fn push_asset<T: 'static + Send + Sync>(&mut self, id: WeakAssetId<T>, asset: T) {
-        let loaded_event = self.assets.sender.prepare(AssetEvent {
-            id,
-            kind: AssetEventKind::Load,
-        });
+    pub fn queue_store<T: 'static + Send + Sync>(
+        &mut self,
+        id: WeakAssetId<T>,
+        asset: T,
+    ) -> StrongAssetId<T> {
+        self.sync_queue
+            .push(SyncQueueEntry::new(id, asset, &self.assets.sender));
 
-        let unloaded_event = self.assets.sender.prepare(AssetEvent {
-            id,
-            kind: AssetEventKind::Unload,
-        });
+        match self.assets.client().register_asset(&id) {
+            RegisterAssetResult::Preexisting(id) => id,
+            RegisterAssetResult::Unfamiliar(id) => id,
+        }
+    }
 
-        self.sync_queue.push(SyncQueueEntry {
-            asset_id: id.untyped,
-            asset: Box::new(asset),
-            loaded_event,
-            unloaded_event,
-        });
+    // TODO: force
+    #[inline]
+    pub fn queue_load<T: 'static + Send + Sync>(
+        &mut self,
+        asset_path: AssetPath,
+    ) -> StrongAssetId<T> {
+        // on changes see SerdeThreadLocal usage
+        let weak = WeakAssetId::new(AssetUri::AssetPath(asset_path));
+        match self.assets.client().register_asset(&weak) {
+            RegisterAssetResult::Preexisting(id) => id,
+            RegisterAssetResult::Unfamiliar(id) => {
+                self.dependency_queue.push(DependencyQueueEntry {
+                    asset_id: id.untyped,
+                    force: false,
+                });
+
+                id
+            }
+        }
+    }
+
+    #[inline]
+    pub unsafe fn queue_store_optimistic<T: 'static + Send + Sync>(
+        &mut self,
+        id: WeakAssetId<T>,
+        asset: T,
+    ) -> LoadedAssetId<T> {
+        self.queue_store(id, asset).into_loaded()
+    }
+
+    #[inline]
+    pub unsafe fn queue_load_optimistic<T: 'static + Send + Sync>(
+        &mut self,
+        asset_path: AssetPath,
+    ) -> LoadedAssetId<T> {
+        self.queue_load(asset_path).into_loaded()
     }
 }
 
 pub trait AssetLoader: Sized + Send + Sync + 'static {
     type Asset: Sized + Send + Sync + 'static;
 
-    fn load<'a>(&self, cursor: &mut AssetCursor<'a>) -> anyhow::Result<Self::Asset>;
+    fn load(cursor: &mut AssetCursor) -> anyhow::Result<Self::Asset>;
 }
 
 // Required to provide serde deserializer context for recursive asset loading
 thread_local!(static SERDE_THREAD_LOCAL: RefCell<Option<SerdeThreadLocal>> = RefCell::new(None));
 
-pub struct SerdeThreadLocal {
+struct SerdeThreadLocal {
     assets: Assets,
+    dependency_queue: Vec<DependencyQueueEntry>,
 }
 
 pub struct SerdeAssetLoader<T> {
@@ -176,40 +172,38 @@ impl<T: DeserializeOwned + Send + Sync + 'static> AssetLoader for SerdeAssetLoad
     type Asset = T;
 
     #[inline]
-    fn load<'a>(&self, cursor: &mut AssetCursor<'a>) -> anyhow::Result<Self::Asset> {
-        let bytes = cursor.read()?;
-
-        let extension = cursor.extension().ok_or_else(|| {
-            anyhow::anyhow!(
-                "could not derive file type for serde asset loader: {}",
-                cursor.asset_path
-            )
-        })?;
-
+    fn load(cursor: &mut AssetCursor) -> anyhow::Result<Self::Asset> {
         SERDE_THREAD_LOCAL.with(|stl| {
             *stl.borrow_mut() = Some(SerdeThreadLocal {
                 assets: cursor.assets.to_owned(),
+                dependency_queue: Vec::default(),
             });
 
+            let extension = cursor.extension().ok_or_else(|| {
+                anyhow::anyhow!(
+                    "could not derive file type for serde asset loader: {}",
+                    cursor.asset_path
+                )
+            })?;
+
             let asset = match extension {
-                "json" => serde_json::from_slice(&bytes)?,
+                "json" => serde_json::from_slice(&cursor.read()?)?,
                 s => Err(anyhow::anyhow!(
                     "unhandled file type for serde asset loader: {}",
                     s
                 ))?,
             };
 
+            cursor.dependency_queue.extend(
+                stl.borrow_mut()
+                    .as_mut()
+                    .unwrap()
+                    .dependency_queue
+                    .drain(..),
+            );
+
             Ok(asset)
         })
-    }
-}
-
-impl<T> Default for SerdeAssetLoader<T> {
-    #[inline]
-    fn default() -> Self {
-        Self {
-            _pd: Default::default(),
-        }
     }
 }
 
@@ -243,12 +237,45 @@ impl<'de, T: Send + Sync + 'static> Deserialize<'de> for AssetId<T, Strong> {
         SERDE_THREAD_LOCAL.with(|maybe_tls| {
             let mut borrow_maybe_tls = maybe_tls.borrow_mut();
             match borrow_maybe_tls.deref_mut() {
-                Some(tls) => Ok(tls.assets.client().upgrade(&weak)),
+                Some(tls) => {
+                    let strong = match tls.assets.client().register_asset(&weak) {
+                        RegisterAssetResult::Preexisting(id) => id,
+                        RegisterAssetResult::Unfamiliar(id) => {
+                            tls.dependency_queue.push(DependencyQueueEntry {
+                                asset_id: id.untyped,
+                                force: false,
+                            });
+
+                            id
+                        }
+                    };
+
+                    Ok(strong)
+                }
                 None => Err(serde::de::Error::custom(
-                    "strong asset ids can only be deserialized by the asset server",
+                    "strong/loaded asset ids can only be deserialized by the asset server",
                 )),
             }
         })
+    }
+}
+
+impl<'de, T: Send + Sync + 'static> Deserialize<'de> for AssetId<T, Loaded> {
+    #[inline]
+    fn deserialize<D>(deserializer: D) -> Result<LoadedAssetId<T>, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        unsafe {
+            let strong = AssetId::<T, Strong>::deserialize(deserializer)?;
+            if let AssetUri::Uuid(_) = strong.untyped.uri {
+                return Err(serde::de::Error::custom(
+                    "loaded asset ids can only be deserialized when the uri is not an uuid",
+                ));
+            }
+
+            Ok(strong.into_loaded())
+        }
     }
 }
 
@@ -358,7 +385,7 @@ pub struct AssetTableLoader<T, S> {
 impl<T: Send + Sync + 'static> AssetLoader for AssetTableLoader<T, Weak> {
     type Asset = AssetTable<T, Weak>;
 
-    fn load<'a>(&self, cursor: &mut AssetCursor<'a>) -> anyhow::Result<Self::Asset> {
+    fn load(cursor: &mut AssetCursor) -> anyhow::Result<Self::Asset> {
         let mut underlying = IndexMap::default();
 
         let mut children = cursor.children()?;
@@ -377,26 +404,34 @@ impl<T: Send + Sync + 'static> AssetLoader for AssetTableLoader<T, Strong> {
     type Asset = AssetTable<T, Strong>;
 
     #[inline]
-    fn load<'a>(&self, cursor: &mut AssetCursor<'a>) -> anyhow::Result<Self::Asset> {
-        let weak_loader: AssetTableLoader<T, Weak> = AssetTableLoader::default();
-        let weak_table = weak_loader.load(cursor)?;
+    fn load(cursor: &mut AssetCursor) -> anyhow::Result<Self::Asset> {
+        let mut underlying = IndexMap::default();
 
-        let assets = cursor.assets.client();
-        let strong_table = weak_table
-            .0
-            .into_iter()
-            .map(|(key, weak)| (key, assets.upgrade(&weak)))
-            .collect();
+        let mut children = cursor.children()?;
+        while let Some(mut child) = children.next() {
+            let strong: StrongAssetId<T> = child.queue_load(child.asset_path);
+            underlying.insert(child.asset_path.path, strong);
+        }
 
-        Ok(AssetTable(strong_table))
+        Ok(AssetTable(underlying))
     }
 }
 
-impl<T, S> Default for AssetTableLoader<T, S> {
-    fn default() -> Self {
-        Self {
-            _pd_t: Default::default(),
-            _pd_s: Default::default(),
+impl<T: Send + Sync + 'static> AssetLoader for AssetTableLoader<T, Loaded> {
+    type Asset = AssetTable<T, Loaded>;
+
+    #[inline]
+    fn load(cursor: &mut AssetCursor) -> anyhow::Result<Self::Asset> {
+        unsafe {
+            let mut underlying = IndexMap::default();
+
+            let mut children = cursor.children()?;
+            while let Some(mut child) = children.next() {
+                let loaded: LoadedAssetId<T> = child.queue_load_optimistic(child.asset_path);
+                underlying.insert(child.asset_path.path, loaded);
+            }
+
+            Ok(AssetTable(underlying))
         }
     }
 }

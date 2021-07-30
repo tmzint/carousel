@@ -177,7 +177,7 @@ impl AssetLoader for WGSLSourceLoader {
     type Asset = WGSLSource;
 
     #[inline]
-    fn load<'a>(&self, cursor: &mut AssetCursor<'a>) -> anyhow::Result<Self::Asset> {
+    fn load(cursor: &mut AssetCursor) -> anyhow::Result<Self::Asset> {
         let bytes = cursor.read()?;
         let shader_src = String::from_utf8(bytes)?;
         Ok(WGSLSource(shader_src.into()))

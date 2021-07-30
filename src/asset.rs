@@ -350,14 +350,19 @@ impl Serialize for AssetUri {
 }
 
 #[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd)]
-pub(crate) struct UntypedAssetId {
+pub struct UntypedAssetId {
+    // Optimization: use id as sole basis for Eq, PartialEq, Ord, PartialOrd
     id: [u8; 16],
     uri: AssetUri,
     tid: TypeId,
+    tname: &'static str,
 }
 
 impl UntypedAssetId {
-    fn new(tid: TypeId, uri: AssetUri) -> Self {
+    fn new<T: 'static>(uri: AssetUri) -> Self {
+        let tid = TypeId::of::<T>();
+        let tname = std::any::type_name::<T>();
+
         // required as we otherwise can't hash tid
         struct Blake3StdHasher(blake3::Hasher);
         impl std::hash::Hasher for Blake3StdHasher {
@@ -376,7 +381,12 @@ impl UntypedAssetId {
         let mut id = [0; 16];
         hasher.0.finalize_xof().fill(&mut id);
 
-        UntypedAssetId { id, tid, uri }
+        UntypedAssetId {
+            id,
+            tid,
+            uri,
+            tname,
+        }
     }
 }
 
@@ -394,7 +404,7 @@ impl Debug for UntypedAssetId {
         f.debug_struct("UntypedAssetId")
             .field("id", &format!("{:032x}", id))
             .field("kind", &self.uri)
-            .field("tid", &self.tid)
+            .field("tname", &self.tname)
             .finish()
     }
 }
@@ -444,7 +454,7 @@ impl<T, S> AssetId<T, S> {
 
 impl<T: 'static> AssetId<T, Weak> {
     fn new(uri: AssetUri) -> Self {
-        let untyped = UntypedAssetId::new(TypeId::of::<T>(), uri);
+        let untyped = UntypedAssetId::new::<T>(uri);
         Self {
             untyped,
             strength: Weak,
@@ -601,25 +611,17 @@ impl AssetServerBuilder {
     }
 
     pub fn add_serde<T: DeserializeOwned + Send + Sync + 'static>(self) -> Self {
-        let asset_loader: SerdeAssetLoader<T> = SerdeAssetLoader::default();
-        self.add(asset_loader)
+        self.add::<SerdeAssetLoader<T>>()
     }
 
-    pub fn add_strong_table<T: Send + Sync + 'static>(self) -> Self {
-        let asset_loader: AssetTableLoader<T, Strong> = AssetTableLoader::default();
-        self.add(asset_loader)
-    }
-
-    pub fn add_weak_table<T: Send + Sync + 'static>(self) -> Self {
-        let asset_loader: AssetTableLoader<T, Weak> = AssetTableLoader::default();
-        self.add(asset_loader)
-    }
-
-    pub fn add<T: AssetLoader>(mut self, asset_loader: T) -> Self {
+    pub fn add<T: AssetLoader>(mut self) -> Self {
         unsafe {
-            self.insert_loader(asset_loader);
-            self.handler = self.handler.on(on_load_asset_event::<T::Asset>);
+            self.insert_loader::<T>();
+            self.insert_loader::<AssetTableLoader<T::Asset, Weak>>();
+            self.insert_loader::<AssetTableLoader<T::Asset, Strong>>();
+            self.insert_loader::<AssetTableLoader<T::Asset, Loaded>>();
         }
+
         self
     }
 
@@ -645,6 +647,7 @@ impl AssetServerBuilder {
             .on(on_sync_asset_event)
             .on(on_gc_assets_event)
             .on(on_notify_assets_event)
+            .on(on_load_asset_event)
             .init_fn(move |context| AssetServer {
                 loaders,
                 assets: Assets {
@@ -667,10 +670,10 @@ impl AssetServerBuilder {
             })
     }
 
-    unsafe fn insert_loader<T: AssetLoader>(&mut self, loader: T) {
+    unsafe fn insert_loader<T: AssetLoader>(&mut self) {
         self.loaders.insert(
             TypeId::of::<T::Asset>(),
-            Box::new(move |id, a, sq| {
+            Box::new(move |id, a, sq, dq| {
                 let asset_path = id
                     .uri
                     .asset_path()
@@ -680,11 +683,13 @@ impl AssetServerBuilder {
                     asset_path,
                     assets: a,
                     sync_queue: sq,
+                    dependency_queue: dq,
                 };
 
-                let asset = loader.load(&mut cursor)?;
+                let asset = T::load(&mut cursor)?;
                 let typed_id: WeakAssetId<T::Asset> = WeakAssetId::from_untyped(id);
-                cursor.push_asset(typed_id, asset);
+                let entry = SyncQueueEntry::new(typed_id, asset, &a.sender);
+                sq.push(entry);
 
                 Ok(())
             }),
@@ -693,7 +698,13 @@ impl AssetServerBuilder {
 }
 
 type UntypedLoader = Box<
-    dyn FnMut(UntypedAssetId, &mut Assets, &mut Vec<SyncQueueEntry>) -> anyhow::Result<()> + Send,
+    dyn FnMut(
+            UntypedAssetId,
+            &mut Assets,
+            &mut Vec<SyncQueueEntry>,
+            &mut Vec<DependencyQueueEntry>,
+        ) -> anyhow::Result<()>
+        + Send,
 >;
 
 type UntypedAsset = Box<dyn std::any::Any + 'static + Send + Sync>;
@@ -703,6 +714,36 @@ pub(crate) struct SyncQueueEntry {
     asset: UntypedAsset,
     loaded_event: Option<UntypedMessage>,
     unloaded_event: Option<UntypedMessage>,
+}
+
+impl SyncQueueEntry {
+    fn new<T: 'static + Send + Sync>(
+        id: WeakAssetId<T>,
+        asset: T,
+        sender: &MessageSender,
+    ) -> SyncQueueEntry {
+        let loaded_event = sender.prepare(AssetEvent {
+            id,
+            kind: AssetEventKind::Load,
+        });
+
+        let unloaded_event = sender.prepare(AssetEvent {
+            id,
+            kind: AssetEventKind::Unload,
+        });
+
+        SyncQueueEntry {
+            asset_id: id.untyped,
+            asset: Box::new(asset),
+            loaded_event,
+            unloaded_event,
+        }
+    }
+}
+
+pub(crate) struct DependencyQueueEntry {
+    asset_id: UntypedAssetId,
+    force: bool,
 }
 
 pub struct AssetServer {
@@ -737,9 +778,9 @@ impl AssetServer {
             .add_serde::<Texture>()
             .add_serde::<Pipeline>()
             .add_serde::<Font>()
-            .add(WGSLSourceLoader)
-            .add(MeshLoader)
-            .add(ImageLoader)
+            .add::<WGSLSourceLoader>()
+            .add::<MeshLoader>()
+            .add::<ImageLoader>()
     }
 }
 
@@ -784,35 +825,64 @@ fn on_init_event(state: &mut AssetServer, context: &mut RuntimeContext, event: &
     }
 }
 
-fn on_load_asset_event<T: 'static + Send + Sync>(
+fn on_load_asset_event(
     state: &mut AssetServer,
     context: &mut RuntimeContext,
-    event: &LoadAssetEvent<T>,
+    event: &LoadAssetEvent,
 ) {
-    match state.loaders.get_mut(&TypeId::of::<T>()) {
-        Some(loader) => {
-            if !event.force && state.assets.client().has(&event.id) {
-                return;
-            }
+    let mut dependency_queue = Vec::default();
+    let mut load_asset_id = event.id;
+    let mut force = event.force;
+    let start_sync_queue_len = state.sync_queue.len();
 
-            match (loader)(event.id.untyped, &mut state.assets, &mut state.sync_queue) {
-                Ok(ok) => ok,
-                Err(e) => {
-                    // TODO: panic? -> this is probably required for LoadedAssetTables otherwise how to fail the loading?
-                    //  -> dependency registration?
-                    log::error!("Could not load asset {}: {}", event.id.untyped.uri, e);
-                    return;
-                }
+    loop {
+        if force || !state.assets.client().has_untyped(&load_asset_id) {
+            let loader = match state.loaders.get_mut(&load_asset_id.tid) {
+                Some(loader) => loader,
+                None => panic!(
+                    "AssetLoader not found for type of {:?}",
+                    load_asset_id.tname
+                ),
             };
 
-            state.sync_requested += 1;
-            context.sender().send(SyncAssetEvent {
-                sync: state.sync_requested,
-            });
+            let load_result = (loader)(
+                load_asset_id,
+                &mut state.assets,
+                &mut state.sync_queue,
+                &mut dependency_queue,
+            );
+
+            if let Err(e) = load_result {
+                if load_asset_id == event.id {
+                    log::error!("Could not load asset {:?}: {}", load_asset_id, e);
+                } else {
+                    log::error!(
+                        "Could not load asset {:?} as dependent asset {:?} failed: {}",
+                        event.id,
+                        load_asset_id,
+                        e
+                    );
+                }
+
+                // rollback
+                state.sync_queue.truncate(start_sync_queue_len);
+                break;
+            }
         }
-        None => {
-            log::error!("AssetLoader not found for: {}", std::any::type_name::<T>());
+
+        if let Some(next) = dependency_queue.pop() {
+            load_asset_id = next.asset_id;
+            force = next.force;
+        } else {
+            break;
         }
+    }
+
+    if start_sync_queue_len < state.sync_queue.len() {
+        state.sync_requested += 1;
+        context.sender().send(SyncAssetEvent {
+            sync: state.sync_requested,
+        });
     }
 }
 
@@ -879,43 +949,24 @@ fn on_notify_assets_event(
 ) {
     log::debug!("start checking asset changes");
 
-    let mut changed_assets: Vec<UntypedAssetId> = Vec::default();
     for changed in state.notify.as_mut().unwrap().changes_iter() {
         let assets = &state.assets;
         let mut asset_path = some_or_continue!(assets.paths.asset_path(&changed.path));
         let asset_dir = assets.paths.asset_dir(&asset_path.kind);
         loop {
-            changed_assets.extend(assets.asset_ids_for_path(asset_path).drain(..));
+            for asset_id in assets.asset_ids_for_path(asset_path) {
+                context.sender().send(LoadAssetEvent {
+                    id: asset_id,
+                    force: true,
+                });
+            }
+
             // we check if any parent folder is an asset
             asset_path = some_or_break!(asset_path
                 .path
                 .parent()
                 .and_then(|p| assets.paths.asset_path(&p.to_path(asset_dir))));
         }
-    }
-
-    for asset_id in changed_assets {
-        let loader = state
-            .loaders
-            .get_mut(&asset_id.tid)
-            .expect("asset loader for a reload");
-
-        match (loader)(asset_id, &mut state.assets, &mut state.sync_queue) {
-            Ok(ok) => ok,
-            Err(e) => {
-                log::error!(
-                    "Could not load asset {:?}: {}",
-                    asset_id.uri.asset_path(),
-                    e
-                );
-                return;
-            }
-        };
-
-        state.sync_requested += 1;
-        context.sender().send(SyncAssetEvent {
-            sync: state.sync_requested,
-        });
     }
 
     TimeServer::schedule(
@@ -947,15 +998,9 @@ impl AssetsCreatedEvent {
 }
 
 #[derive(Debug, Clone)]
-pub struct LoadAssetEvent<T> {
-    pub id: AssetId<T, Weak>,
+pub struct LoadAssetEvent {
+    pub id: UntypedAssetId,
     pub force: bool,
-}
-
-impl<T> LoadAssetEvent<T> {
-    fn new(id: AssetId<T, Weak>, force: bool) -> Self {
-        Self { id, force }
-    }
 }
 
 pub struct StoreAssetEvent {

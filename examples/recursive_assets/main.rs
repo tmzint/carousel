@@ -14,7 +14,6 @@ fn main() -> anyhow::Result<()> {
             AssetServer::builder(b)
                 .add_serde::<RecursiveAsset>()
                 .add_serde::<ChildAsset>()
-                .add_weak_table::<ChildAsset>()
                 .finish()
         })
         .add_group(|mut g| {

@@ -117,6 +117,7 @@ impl Assets {
         let counters = self.inner.counters.write();
         let mut path_id_index = self.inner.path_id_index.write();
         let mut unloaded_events = self.inner.unloaded_events.write();
+        let mut loaded_events = Vec::default();
 
         for entry in assets {
             let count = counters
@@ -129,13 +130,20 @@ impl Assets {
                 if let Some(asset_path) = entry.asset_id.uri.asset_path() {
                     path_id_index.insert((asset_path, OrderWindow::new(entry.asset_id)));
                 }
+
                 if let Some(loaded_event) = entry.loaded_event {
-                    self.sender.send_untyped(loaded_event);
+                    loaded_events.push(loaded_event);
                 }
+
                 if let Some(unloaded_event) = entry.unloaded_event {
                     unloaded_events.insert(entry.asset_id, unloaded_event);
                 }
             }
+        }
+
+        // Send loaded events after whole batch has been synced to allow transactions
+        for loaded_event in loaded_events {
+            self.sender.send_untyped(loaded_event)
         }
     }
 
@@ -214,27 +222,18 @@ impl<'a> AssetsClient<'a> {
     pub fn load<T: Send + Sync + 'static>(&self, asset_path: AssetPath) -> StrongAssetId<T> {
         let weak = WeakAssetId::new(AssetUri::AssetPath(asset_path));
 
-        // have to use a val as a direct match won't drop the read lock
-        let counter = self.counters.read().get(&weak.untyped).cloned();
-        match counter {
-            Some(counter) => weak.into_strong(counter),
-            None => {
-                let counter = self
-                    .counters
-                    .write()
-                    .entry(weak.untyped)
-                    .or_insert(Arc::new(()))
-                    .clone();
-
+        match self.register_asset(&weak) {
+            RegisterAssetResult::Preexisting(id) => id,
+            RegisterAssetResult::Unfamiliar(id) => {
                 log::info!("queue load asset: {:?}", weak);
-                if !self.sender.borrow().send(LoadAssetEvent::new(weak, false)) {
-                    panic!(
-                        "missing asset loader for the asset type of {}",
-                        std::any::type_name::<T>()
-                    )
-                }
 
-                weak.into_strong(counter)
+                let load_asset_event = LoadAssetEvent {
+                    id: weak.untyped,
+                    force: false,
+                };
+                self.sender.borrow().send(load_asset_event);
+
+                id
             }
         }
     }
@@ -286,21 +285,9 @@ impl<'a> AssetsClient<'a> {
         asset: T,
     ) -> StrongAssetId<T> {
         let asset_id = asset_id.into();
-
-        // have to use a val as a direct match won't drop the read lock
-        let counter = self.counters.read().get(&asset_id.untyped).cloned();
-        let strong_asset_id = match counter {
-            Some(counter) => asset_id.into_strong(counter),
-            None => {
-                let counter = self
-                    .counters
-                    .write()
-                    .entry(asset_id.untyped)
-                    .or_insert(Arc::new(()))
-                    .clone();
-
-                asset_id.into_strong(counter)
-            }
+        let strong_asset_id = match self.register_asset(&asset_id) {
+            RegisterAssetResult::Preexisting(id) => id,
+            RegisterAssetResult::Unfamiliar(id) => id,
         };
 
         log::info!("queue store asset: {:?}", asset_id);
@@ -312,7 +299,12 @@ impl<'a> AssetsClient<'a> {
 
     #[inline]
     pub fn has<T, S>(&self, id: &AssetId<T, S>) -> bool {
-        self.underlying.get(&id.untyped).is_some()
+        self.has_untyped(&id.untyped)
+    }
+
+    #[inline]
+    pub fn has_untyped(&self, untyped: &UntypedAssetId) -> bool {
+        self.underlying.get(untyped).is_some()
     }
 
     #[inline]
@@ -333,4 +325,30 @@ impl<'a> AssetsClient<'a> {
             unsafe { &*(any as *const dyn std::any::Any as *const T) }
         })
     }
+
+    pub(crate) fn register_asset<T: Send + Sync + 'static>(
+        &self,
+        weak: &WeakAssetId<T>,
+    ) -> RegisterAssetResult<T> {
+        // have to use a val as a direct match won't drop the read lock
+        let counter = self.counters.read().get(&weak.untyped).cloned();
+        match counter {
+            Some(counter) => RegisterAssetResult::Preexisting(weak.into_strong(counter)),
+            None => {
+                let counter = self
+                    .counters
+                    .write()
+                    .entry(weak.untyped)
+                    .or_insert(Arc::new(()))
+                    .clone();
+
+                RegisterAssetResult::Unfamiliar(weak.into_strong(counter))
+            }
+        }
+    }
+}
+
+pub(crate) enum RegisterAssetResult<T> {
+    Preexisting(StrongAssetId<T>),
+    Unfamiliar(StrongAssetId<T>),
 }

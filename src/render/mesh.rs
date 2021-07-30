@@ -34,7 +34,7 @@ impl AssetLoader for MeshLoader {
     type Asset = Mesh;
 
     #[inline]
-    fn load<'a>(&self, cursor: &mut AssetCursor<'a>) -> anyhow::Result<Self::Asset> {
+    fn load(cursor: &mut AssetCursor) -> anyhow::Result<Self::Asset> {
         let extension = cursor.extension().ok_or_else(|| {
             anyhow::anyhow!("could not derive file type for serde asset loader: {}",)
         })?;

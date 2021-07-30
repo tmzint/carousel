@@ -203,7 +203,7 @@ impl AssetLoader for ImageLoader {
     type Asset = DynamicImage;
 
     #[inline]
-    fn load<'a>(&self, cursor: &mut AssetCursor<'a>) -> anyhow::Result<Self::Asset> {
+    fn load(cursor: &mut AssetCursor) -> anyhow::Result<Self::Asset> {
         let bytes = cursor.read()?;
         let img = image::load_from_memory(&bytes)?;
         Ok(img)
