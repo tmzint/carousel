@@ -44,6 +44,26 @@ pub struct AssetCursor<'a> {
 
 impl<'a> AssetCursor<'a> {
     #[inline]
+    pub fn is_file(&self) -> bool {
+        let path = self
+            .asset_path
+            .path
+            .to_path(self.assets.paths.asset_dir(&self.asset_path.kind));
+
+        path.is_file()
+    }
+
+    #[inline]
+    pub fn is_dir(&self) -> bool {
+        let path = self
+            .asset_path
+            .path
+            .to_path(self.assets.paths.asset_dir(&self.asset_path.kind));
+
+        path.is_dir()
+    }
+
+    #[inline]
     pub fn asset_path(&self) -> &AssetPath {
         &self.asset_path
     }
@@ -64,6 +84,7 @@ impl<'a> AssetCursor<'a> {
         self.asset_path.path.extension()
     }
 
+    // TODO: glob filter?
     #[inline]
     pub fn children<'b>(&'b mut self) -> anyhow::Result<AssetCursorChildren<'a, 'b>> {
         let mut paths = Vec::new();
@@ -76,11 +97,6 @@ impl<'a> AssetCursor<'a> {
         for entry in dir {
             let entry = entry?;
             let entry_path = entry.path();
-
-            // TODO: configurable filter (glob?), also see lower entry_path.file_name()
-            if !entry_path.is_file() {
-                continue;
-            }
 
             if let Some(file_name) = entry_path.file_name().and_then(|s| s.to_str()) {
                 let entry_rel_path = Intern::new(self.asset_path.path.join(file_name));
@@ -390,6 +406,10 @@ impl<T: Send + Sync + 'static> AssetLoader for AssetTableLoader<T, Weak> {
 
         let mut children = cursor.children()?;
         while let Some(child) = children.next() {
+            if !child.is_file() {
+                continue;
+            }
+
             underlying.insert(
                 child.asset_path.path,
                 WeakAssetId::new(AssetUri::AssetPath(child.asset_path)),
@@ -409,6 +429,10 @@ impl<T: Send + Sync + 'static> AssetLoader for AssetTableLoader<T, Strong> {
 
         let mut children = cursor.children()?;
         while let Some(mut child) = children.next() {
+            if !child.is_file() {
+                continue;
+            }
+
             let strong: StrongAssetId<T> = child.queue_load(child.asset_path);
             underlying.insert(child.asset_path.path, strong);
         }
@@ -427,6 +451,10 @@ impl<T: Send + Sync + 'static> AssetLoader for AssetTableLoader<T, Loaded> {
 
             let mut children = cursor.children()?;
             while let Some(mut child) = children.next() {
+                if !child.is_file() {
+                    continue;
+                }
+
                 let loaded: LoadedAssetId<T> = child.queue_load_optimistic(child.asset_path);
                 underlying.insert(child.asset_path.path, loaded);
             }
