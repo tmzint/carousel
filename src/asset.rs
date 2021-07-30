@@ -580,6 +580,93 @@ impl<T, S: Clone> Clone for AssetId<T, S> {
 
 impl<T, S: Copy> Copy for AssetId<T, S> {}
 
+#[derive(Debug, Clone, Hash, Ord, PartialOrd, Eq, PartialEq)]
+pub enum DynAssetId<T> {
+    Weak(WeakAssetId<T>),
+    Strong(StrongAssetId<T>),
+    Loaded(LoadedAssetId<T>),
+}
+
+impl<T> DynAssetId<T> {
+    #[inline]
+    pub fn when_weak<F: FnOnce(&WeakAssetId<T>) -> Option<Self>>(&mut self, f: F) -> &mut Self {
+        if let Self::Weak(weak) = self {
+            if let Some(new) = f(weak) {
+                *self = new;
+            }
+        }
+
+        self
+    }
+
+    #[inline]
+    pub fn when_strong<F: FnOnce(&StrongAssetId<T>) -> Option<Self>>(&mut self, f: F) -> &mut Self {
+        if let Self::Strong(strong) = self {
+            if let Some(new) = f(strong) {
+                *self = new;
+            }
+        }
+
+        self
+    }
+
+    #[inline]
+    pub fn when_loaded<F: FnOnce(&LoadedAssetId<T>) -> Option<Self>>(&mut self, f: F) -> &mut Self {
+        if let Self::Loaded(loaded) = self {
+            if let Some(new) = f(loaded) {
+                *self = new;
+            }
+        }
+
+        self
+    }
+
+    #[inline]
+    pub fn as_weak(&self) -> Option<&WeakAssetId<T>> {
+        if let Self::Weak(weak) = self {
+            Some(weak)
+        } else {
+            None
+        }
+    }
+
+    #[inline]
+    pub fn as_strong(&self) -> Option<&StrongAssetId<T>> {
+        if let Self::Strong(strong) = self {
+            Some(strong)
+        } else {
+            None
+        }
+    }
+
+    #[inline]
+    pub fn as_loaded(&self) -> Option<&LoadedAssetId<T>> {
+        if let Self::Loaded(loaded) = self {
+            Some(loaded)
+        } else {
+            None
+        }
+    }
+}
+
+impl<T> From<WeakAssetId<T>> for DynAssetId<T> {
+    fn from(weak: WeakAssetId<T>) -> Self {
+        DynAssetId::Weak(weak)
+    }
+}
+
+impl<T> From<StrongAssetId<T>> for DynAssetId<T> {
+    fn from(strong: StrongAssetId<T>) -> Self {
+        DynAssetId::Strong(strong)
+    }
+}
+
+impl<T> From<LoadedAssetId<T>> for DynAssetId<T> {
+    fn from(loaded: LoadedAssetId<T>) -> Self {
+        DynAssetId::Loaded(loaded)
+    }
+}
+
 pub struct AssetServerBuilder {
     handler: OpenMessageHandlerBuilder<AssetServer>,
     loaders: HashMap<TypeId, UntypedLoader>,
