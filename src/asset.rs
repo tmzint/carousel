@@ -491,7 +491,7 @@ impl<T: 'static> AssetId<T, Weak> {
 
 impl<T: 'static> AssetId<T, Loaded> {
     #[inline]
-    pub fn as_strong(&self) -> StrongAssetId<T> {
+    pub fn to_strong(&self) -> StrongAssetId<T> {
         AssetId {
             untyped: self.untyped,
             strength: Strong(self.strength.0.clone()),
