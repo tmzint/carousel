@@ -7,7 +7,7 @@ use crate::asset::notify::AssetChangeNotify;
 use crate::asset::storage::{Assets, AssetsPaths, InnerAssets};
 use crate::platform::action::ActionsConfig;
 use crate::platform::DisplayConfig;
-use crate::prelude::Font;
+use crate::prelude::{AssetsClient, Font};
 use crate::render::mesh::MeshLoader;
 use crate::render::pipeline::{Pipeline, WGSLSourceLoader};
 use crate::render::view::{ImageLoader, Texture};
@@ -587,7 +587,7 @@ pub enum DynAssetId<T> {
     Loaded(LoadedAssetId<T>),
 }
 
-impl<T> DynAssetId<T> {
+impl<T: 'static + Send + Sync> DynAssetId<T> {
     #[inline]
     pub fn when_weak<F: FnOnce(&WeakAssetId<T>) -> Option<Self>>(&mut self, f: F) -> &mut Self {
         if let Self::Weak(weak) = self {
@@ -645,6 +645,24 @@ impl<T> DynAssetId<T> {
             Some(loaded)
         } else {
             None
+        }
+    }
+
+    #[inline]
+    pub fn advance_loading(&mut self, assets: &AssetsClient) -> Option<&LoadedAssetId<T>> {
+        match self {
+            DynAssetId::Weak(weak) => {
+                *self = assets.upgrade(weak).into();
+                None
+            }
+            DynAssetId::Strong(strong) => {
+                if let Some(loaded) = assets.try_loaded(strong) {
+                    *self = loaded.into()
+                }
+
+                None
+            }
+            DynAssetId::Loaded(loaded) => Some(loaded),
         }
     }
 }
