@@ -1,5 +1,9 @@
 # Carousel
 
+*\<currently in an experimental state\>*
+
+An message oriented game engine.
+
 ## WGSL Shader validation
 
 ```bash
@@ -30,6 +34,6 @@ Example:
 
 ## Licence
 
-Roundabout is dual-licensed under Apache 2.0 and MIT.
+Carousel is dual-licensed under Apache 2.0 and MIT.
 
 See [LICENSE_APACHE](LICENSE_APACHE) and [LICENSE_MIT](LICENSE_MIT)
