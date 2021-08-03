@@ -27,3 +27,9 @@ Example:
 ```
 ./msdf-atlas-gen -font Hack-v3.003-ttf/ttf/Hack-Regular.ttf -json hack_regular.json -imageout hack_regular.png -size 24 -pxrange 12
 ```
+
+## Licence
+
+Roundabout is dual-licensed under Apache 2.0 and MIT.
+
+See [LICENSE_APACHE](LICENSE_APACHE) and [LICENSE_MIT](LICENSE_MIT)
