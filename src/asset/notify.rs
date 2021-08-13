@@ -9,7 +9,7 @@ pub struct AssetChangeNotify {
 impl AssetChangeNotify {
     pub(crate) fn new() -> anyhow::Result<Self> {
         let (sender, receiver) = flume::unbounded();
-        let mut watcher: RecommendedWatcher = Watcher::new_immediate(move |res| {
+        let mut watcher: RecommendedWatcher = notify::recommended_watcher(move |res| {
             match res {
                 Ok(event) => {
                     let event: notify::event::Event = event;
@@ -31,13 +31,14 @@ impl AssetChangeNotify {
     }
 
     pub(crate) fn watch<P: AsRef<Path>>(&mut self, path: P) -> anyhow::Result<()> {
-        self.watcher.watch(path, RecursiveMode::Recursive)?;
+        self.watcher
+            .watch(path.as_ref(), RecursiveMode::Recursive)?;
         Ok(())
     }
 
     #[allow(dead_code)]
     pub(crate) fn unwatch<P: AsRef<Path>>(&mut self, path: P) -> anyhow::Result<()> {
-        self.watcher.unwatch(path)?;
+        self.watcher.unwatch(path.as_ref())?;
         Ok(())
     }
 
