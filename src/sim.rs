@@ -3,6 +3,7 @@ use crate::asset::AssetsCreatedEvent;
 use crate::platform::message::FrameRequestedEvent;
 use crate::render::client::RenderClient;
 use crate::render::message::RenderCreatedEvent;
+use crate::some_or_return;
 use roundabout::prelude::*;
 use std::marker::PhantomData;
 
@@ -87,25 +88,30 @@ pub type InitSimHandlerBuilder<T, R, S> =
 
 pub type SimHandler<T, R, S> = MessageHandler<T, SimResources<R>, StateInstruction<S>>;
 
+pub struct SimStackEntry<T>(usize, Option<StateInstruction<T>>);
+
 struct SimHState<R, S: SimState<R>> {
     states: Vec<S>,
     head_message: Option<InlineMessageView<SimStateEvent>>,
     tail_message: Option<InlineMessageView<SimStateEvent>>,
     stop_message: Option<InlineMessageView<SimStateEvent>>,
+    stack: Vec<SimStackEntry<S>>,
     _pd: PhantomData<R>,
 }
 
 impl<R: 'static, S: SimState<R>> SimHState<R, S> {
     pub fn initial<A: AsRef<RuntimeContext>>(initial: S, res: A) -> Self {
+        let initial_stack_entry = SimStackEntry(0, Some(StateInstruction::push(initial)));
         let head_message = InlineMessageView::new(SimStateEvent::Head, &res);
         let tail_message = InlineMessageView::new(SimStateEvent::Tail, &res);
         let stop_message = InlineMessageView::new(SimStateEvent::Stop, &res);
 
         Self {
-            states: vec![initial],
+            states: vec![],
             head_message,
             tail_message,
             stop_message,
+            stack: vec![initial_stack_entry],
             _pd: Default::default(),
         }
     }
@@ -114,98 +120,199 @@ impl<R: 'static, S: SimState<R>> SimHState<R, S> {
         state: &mut S,
         res: &mut SimResources<R>,
         message: &Option<InlineMessageView<SimStateEvent>>,
-    ) {
-        if let Some(message) = message {
-            let instruction = state.handle(res, message);
-            // TODO: support instructions?
-            assert!(
-                instruction.map(|i| i.is_stay()).unwrap_or(true),
-                "non stay instructions are not supported when state handles SimStateEvent"
-            );
-        };
+    ) -> Option<StateInstruction<S>> {
+        message.as_ref().and_then(|m| state.handle(res, m))
     }
 
     fn handle<M: MessageView>(&mut self, res: &mut SimResources<R>, message: &M) {
-        // TODO: implement instruction handling via a stack machine?
-        let mut current = 0;
-        while current < self.states.len() {
-            let shadow = current + 1 < self.states.len();
-            let instruction = self.states.get_mut(current).unwrap().handle(res, message);
-            match instruction {
+        // TODO: pop on shutdown event?
+        // Optimization: filter messages that are not handed by any state
+
+        let mut current: usize = 0;
+
+        // Optimal path with no stat changes
+        for state in &mut self.states {
+            match state.handle(res, message) {
                 None => {
                     current += 1;
                 }
                 Some(StateInstruction::Stay) => {
                     current += 1;
                 }
-                Some(StateInstruction::Switch(new)) => {
-                    let state = self.states.get_mut(current).unwrap();
-                    Self::inject_state_event(state, res, &self.stop_message);
-                    *state = new;
+                Some(instruction) => {
+                    let stack_entry = SimStackEntry(current, Some(instruction));
+                    self.stack.push(stack_entry);
+                    current += 1;
+                    break;
                 }
-                Some(StateInstruction::Push(mut new)) => {
-                    if shadow {
-                        for mut state in self.states.drain(current + 1..).rev() {
-                            Self::inject_state_event(&mut state, res, &self.stop_message);
-                        }
-                    } else if new.len() > 0 {
-                        let state = self.states.get_mut(current).unwrap();
-                        Self::inject_state_event(state, res, &self.tail_message);
-                    }
+            }
+        }
 
-                    let new_tails = new.len().saturating_sub(1);
-                    for new_tail in new.iter_mut().take(new_tails) {
-                        Self::inject_state_event(new_tail, res, &self.tail_message);
-                    }
-                    self.states.extend(new);
+        // println!("states.len: {}", self.states.len());
+        // TODO: print stack state? State name?
+        loop {
+            match self.stack.pop() {
+                None => {
+                    let state = some_or_return!(self.states.get_mut(current as usize));
+                    let instruction = state.handle(res, message);
+                    self.stack
+                        .push(SimStackEntry(current as usize, instruction));
                     current += 1;
                 }
-                Some(StateInstruction::Pop) => {
-                    for mut state in self.states.drain(current..).rev() {
-                        Self::inject_state_event(&mut state, res, &self.stop_message);
+                Some(SimStackEntry(_at, None)) => {}
+                Some(SimStackEntry(_at, Some(StateInstruction::Stay))) => {}
+                Some(SimStackEntry(at, Some(StateInstruction::Switch(new)))) => {
+                    log::info!("switch state at {}", at);
+
+                    let is_head = at + 1 == self.states.len();
+                    let state = self.states.get_mut(at).unwrap();
+                    let instruction = Self::inject_state_event(state, res, &self.stop_message);
+                    assert!(
+                        instruction.map(|i| i.is_stay()).unwrap_or(true),
+                        "non stay instructions are not supported when state handles SimStateEvent::Stop"
+                    );
+                    *state = new;
+
+                    if is_head {
+                        let instruction = Self::inject_state_event(state, res, &self.head_message);
+                        self.stack.push(SimStackEntry(at, instruction));
+                    } else {
+                        let instruction = Self::inject_state_event(state, res, &self.tail_message);
+                        self.stack.push(SimStackEntry(at, instruction));
                     }
 
-                    if let Some(state) = self.states.get_mut(current.saturating_sub(1)) {
-                        Self::inject_state_event(state, res, &self.head_message);
-                    }
-
-                    if self.states.is_empty() {
-                        res.context.shutdown_switch().request_shutdown();
+                    if at < current {
+                        current = at;
                     }
                 }
-                Some(StateInstruction::PopPush(mut new)) => {
-                    for mut state in self.states.drain(current..).rev() {
-                        Self::inject_state_event(&mut state, res, &self.stop_message);
-                    }
+                Some(SimStackEntry(at, Some(StateInstruction::Push(new)))) => {
+                    log::info!("push {} state(s) at {}", new.len(), at);
 
-                    if new.is_empty() {
-                        if let Some(state) = self.states.get_mut(current.saturating_sub(1)) {
-                            Self::inject_state_event(state, res, &self.head_message);
+                    let next_idx = at + 1;
+                    let is_tail = next_idx < self.states.len();
+                    let new_len = new.len();
+
+                    if is_tail {
+                        for mut state in self.states.drain(next_idx..).rev() {
+                            let instruction =
+                                Self::inject_state_event(&mut state, res, &self.stop_message);
+                            assert!(
+                                instruction.map(|i| i.is_stay()).unwrap_or(true),
+                                "non stay instructions are not supported when state handles SimStateEvent::Stop"
+                            );
                         }
                     }
 
-                    let new_tails = new.len().saturating_sub(1);
-                    for new_tail in new.iter_mut().take(new_tails) {
-                        Self::inject_state_event(new_tail, res, &self.tail_message);
-                    }
+                    if new_len > 0 {
+                        self.states.extend(new);
 
-                    self.states.extend(new);
-
-                    if self.states.is_empty() {
-                        res.context.shutdown_switch().request_shutdown();
-                    }
-                }
-                Some(StateInstruction::Extract) => {
-                    let mut state = self.states.remove(current);
-                    Self::inject_state_event(&mut state, res, &self.stop_message);
-                    if current == self.states.len() {
-                        if let Some(state) = self.states.get_mut(current.saturating_sub(1)) {
-                            Self::inject_state_event(state, res, &self.head_message);
+                        for (idx, new_tail) in self
+                            .states
+                            .iter_mut()
+                            .enumerate()
+                            .skip(next_idx - !is_tail as usize)
+                            .take(new_len + !is_tail as usize - 1)
+                        {
+                            let instruction =
+                                Self::inject_state_event(new_tail, res, &self.tail_message);
+                            self.stack.push(SimStackEntry(idx, instruction));
                         }
                     }
 
-                    if self.states.is_empty() {
+                    if (new_len == 0 && is_tail) || new_len > 0 {
+                        let last_idx = self.states.len().saturating_sub(1);
+                        if let Some(last) = self.states.last_mut() {
+                            let instruction =
+                                Self::inject_state_event(last, res, &self.head_message);
+                            self.stack.push(SimStackEntry(last_idx, instruction));
+                        }
+                    }
+                }
+                Some(SimStackEntry(at, Some(StateInstruction::Pop))) => {
+                    log::info!("pop state at {}", at);
+
+                    for mut state in self.states.drain(at..).rev() {
+                        let instruction =
+                            Self::inject_state_event(&mut state, res, &self.stop_message);
+                        assert!(
+                            instruction.map(|i| i.is_stay()).unwrap_or(true),
+                            "non stay instructions are not supported when state handles SimStateEvent::Stop"
+                        );
+                    }
+
+                    let last_idx = self.states.len().saturating_sub(1);
+                    if let Some(last) = self.states.last_mut() {
+                        let instruction = Self::inject_state_event(last, res, &self.head_message);
+                        self.stack.push(SimStackEntry(last_idx, instruction));
+                    } else {
                         res.context.shutdown_switch().request_shutdown();
+                    }
+                }
+                Some(SimStackEntry(at, Some(StateInstruction::PopPush(new)))) => {
+                    log::info!("pop push {} state(s) at {}", new.len(), at);
+
+                    let new_len = new.len();
+
+                    for mut state in self.states.drain(at..).rev() {
+                        let instruction =
+                            Self::inject_state_event(&mut state, res, &self.stop_message);
+                        assert!(
+                            instruction.map(|i| i.is_stay()).unwrap_or(true),
+                            "non stay instructions are not supported when state handles SimStateEvent::Stop"
+                        );
+                    }
+
+                    if new_len > 0 {
+                        self.states.extend(new);
+
+                        for (idx, new_tail) in self
+                            .states
+                            .iter_mut()
+                            .enumerate()
+                            .skip(at)
+                            .take(new_len - 1)
+                        {
+                            let instruction =
+                                Self::inject_state_event(new_tail, res, &self.tail_message);
+                            self.stack.push(SimStackEntry(idx, instruction));
+                        }
+                    }
+
+                    let last_idx = self.states.len().saturating_sub(1);
+                    if let Some(last) = self.states.last_mut() {
+                        let instruction = Self::inject_state_event(last, res, &self.head_message);
+                        self.stack.push(SimStackEntry(last_idx, instruction));
+                    } else {
+                        res.context.shutdown_switch().request_shutdown();
+                    }
+
+                    if at < current {
+                        current = at;
+                    }
+                }
+                Some(SimStackEntry(at, Some(StateInstruction::Extract))) => {
+                    log::info!("extract state at {}", at);
+
+                    let mut state = self.states.remove(at);
+                    let instruction = Self::inject_state_event(&mut state, res, &self.stop_message);
+                    assert!(
+                        instruction.map(|i| i.is_stay()).unwrap_or(true),
+                        "non stay instructions are not supported when state handles SimStateEvent::Stop"
+                    );
+
+                    if at == self.states.len() {
+                        let last_idx = self.states.len().saturating_sub(1);
+                        if let Some(last) = self.states.last_mut() {
+                            let instruction =
+                                Self::inject_state_event(last, res, &self.head_message);
+                            self.stack.push(SimStackEntry(last_idx, instruction));
+                        }
+                    } else if self.states.is_empty() {
+                        res.context.shutdown_switch().request_shutdown();
+                    }
+
+                    if at < current {
+                        current = at;
                     }
                 }
             }
