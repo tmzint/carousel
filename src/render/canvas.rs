@@ -77,7 +77,7 @@ impl RealizedCanvasLayer {
         let uniform_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("Uniform Buffer"),
             contents: bytemuck::cast_slice(&[Uniforms::default()]),
-            usage: wgpu::BufferUsage::UNIFORM | wgpu::BufferUsage::COPY_DST,
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
         });
 
         let uniform_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
@@ -192,7 +192,7 @@ impl RealizedCanvasLayer {
                 tint: raw.tint,
                 texture_layer: raw.texture_layer as i32,
             }]),
-            usage: wgpu::BufferUsage::VERTEX,
+            usage: wgpu::BufferUsages::VERTEX,
         });
         let render_entry = RenderEntry {
             instance_buffer,
@@ -227,7 +227,7 @@ impl RealizedCanvasLayer {
         pipelines: &Pipelines,
         textures: &Textures,
         meshes: &Meshes,
-        target: Option<&wgpu::SwapChainTexture>,
+        target: Option<&wgpu::TextureView>,
         attachment: &RealizedView,
         color_load_ops: wgpu::LoadOp<wgpu::Color>,
         depth_texture_view: &wgpu::TextureView,
@@ -248,7 +248,7 @@ impl RealizedCanvasLayer {
         let update_uniform_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("Update Uniform Buffer"),
             contents: bytemuck::cast_slice(&[uniforms]),
-            usage: wgpu::BufferUsage::COPY_SRC,
+            usage: wgpu::BufferUsages::COPY_SRC,
         });
         encoder.copy_buffer_to_buffer(
             &update_uniform_buffer,
@@ -262,7 +262,7 @@ impl RealizedCanvasLayer {
             let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 color_attachments: &[wgpu::RenderPassColorAttachment {
                     view: &attachment.view,
-                    resolve_target: target.map(|sct| &sct.view),
+                    resolve_target: target,
                     ops: wgpu::Operations {
                         load: color_load_ops,
                         store: true,
@@ -590,13 +590,17 @@ impl Canvasses {
         &mut self,
         device: &wgpu::Device,
         queue: &wgpu::Queue,
-        swap_chain: &wgpu::SwapChain,
+        surface: &wgpu::Surface,
         cameras: &Cameras,
         pipelines: &Pipelines,
         textures: &Textures,
         meshes: &Meshes,
     ) -> anyhow::Result<()> {
-        let frame = swap_chain.get_current_frame()?.output;
+        let frame = surface.get_current_frame()?;
+        let target = frame
+            .output
+            .texture
+            .create_view(&wgpu::TextureViewDescriptor::default());
 
         let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
             label: Some("Render Encoder"),
@@ -646,7 +650,7 @@ impl Canvasses {
                     pipelines,
                     textures,
                     meshes,
-                    canvas.frame.then(|| &frame),
+                    canvas.frame.then(|| &target),
                     &canvas.frame_buffer,
                     color_load_ops,
                     &canvas.depth_buffer.view,

@@ -8,6 +8,7 @@ use serde::Deserialize;
 use std::collections::BTreeSet;
 use std::num::NonZeroU32;
 use uuid::Uuid;
+use wgpu::TextureAspect;
 
 pub enum BufferKind {
     Frame,
@@ -48,7 +49,7 @@ impl RealizedView {
             sample_count: samples,
             dimension: wgpu::TextureDimension::D2,
             format: Self::FRAME_TEXTURE_FORMAT,
-            usage: wgpu::TextureUsage::RENDER_ATTACHMENT,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
         };
 
         let texture = device.create_texture(&desc);
@@ -81,7 +82,7 @@ impl RealizedView {
             sample_count: samples,
             dimension: wgpu::TextureDimension::D2,
             format: Self::DEPTH_TEXTURE_FORMAT,
-            usage: wgpu::TextureUsage::RENDER_ATTACHMENT,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
         };
         let texture = device.create_texture(&desc);
 
@@ -117,6 +118,7 @@ impl RealizedView {
                     texture: &realized.texture,
                     mip_level: 0,
                     origin: wgpu::Origin3d::ZERO,
+                    aspect: TextureAspect::All,
                 },
                 rgba.as_raw(),
                 wgpu::ImageDataLayout {
@@ -140,6 +142,7 @@ impl RealizedView {
                             y: 0,
                             z: layer,
                         },
+                        aspect: TextureAspect::All,
                     },
                     view.as_raw(),
                     wgpu::ImageDataLayout {
@@ -178,7 +181,7 @@ impl RealizedView {
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
             format: Self::IMAGE_TEXTURE_FORMAT,
-            usage: wgpu::TextureUsage::SAMPLED | wgpu::TextureUsage::COPY_DST,
+            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
         });
 
         let view = texture.create_view(&wgpu::TextureViewDescriptor {

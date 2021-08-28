@@ -300,7 +300,6 @@ impl Pipelines {
 
         let module = device.create_shader_module(&wgpu::ShaderModuleDescriptor {
             label: Some("module"),
-            flags: wgpu::ShaderFlags::all(),
             source: wgpu::ShaderSource::Wgsl(source.0.clone()),
         });
 
@@ -369,7 +368,7 @@ impl Pipelines {
                 entry_point: "main",
                 targets: &[wgpu::ColorTargetState {
                     format: RealizedView::FRAME_TEXTURE_FORMAT,
-                    write_mask: wgpu::ColorWrite::ALL,
+                    write_mask: wgpu::ColorWrites::ALL,
                     blend: Some(wgpu::BlendState {
                         color: pipeline.color_blend,
                         alpha: pipeline.alpha_blend,

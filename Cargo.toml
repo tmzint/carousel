@@ -3,6 +3,7 @@ name = "carousel"
 version = "0.1.0"
 authors = ["Timo Merlin Zint <timozint@gmail.com>"]
 edition = "2018"
+resolver = "2"
 
 [dependencies]
 ahash = { version = "^0.7", feature = ["compile-time-rng"] }
@@ -15,7 +16,7 @@ relative-path = { version = "^1.4", features = ["serde"] }
 winit = "^0.25"
 roundabout = { path = "../roundabout" }
 # need replay for serde deserialization ...
-wgpu = {version = "^0.9", features = ["replay"] }
+wgpu = {version = "^0.10", features = ["replay"] }
 bytemuck = { version = "^1.7", features = ["derive"] }
 log = "^0.4"
 blake3 = "^1.0"

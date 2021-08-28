@@ -273,7 +273,7 @@ fn run_event_loop(
     let event_loop = EventLoop::new();
     let window = window_builder.build(&event_loop).unwrap();
 
-    let instance = wgpu::Instance::new(wgpu::BackendBit::PRIMARY);
+    let instance = wgpu::Instance::new(wgpu::Backends::PRIMARY);
     let window_surface = unsafe { instance.create_surface(&window) };
     let mut inputs = Inputs::new(window.inner_size().into());
     let mut actions = {

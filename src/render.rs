@@ -34,17 +34,17 @@ use std::ops::Deref;
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum Samples {
-    Two = 2,
+    // WGPU currently only supports 1 and 4 samples.
+    // We currently always create multi-sampled textures and therefore only support the singe multi sampling mode of 4.
+    // One = 1,
     Four = 4,
-    Eight = 8,
 }
 
 impl From<Samples> for u32 {
     fn from(samples: Samples) -> Self {
         match samples {
-            Samples::Two => 2,
+            // Samples::One => 1,
             Samples::Four => 4,
-            Samples::Eight => 8,
         }
     }
 }
@@ -55,8 +55,7 @@ pub struct Renderer {
     surface: wgpu::Surface,
     device: wgpu::Device,
     queue: wgpu::Queue,
-    sc_desc: wgpu::SwapChainDescriptor,
-    swap_chain: wgpu::SwapChain,
+    surface_configuration: wgpu::SurfaceConfiguration,
     pipelines: Pipelines,
     textures: Textures,
     meshes: Meshes,
@@ -94,20 +93,20 @@ impl Renderer {
             )
             .await?;
 
-        let sc_desc = wgpu::SwapChainDescriptor {
-            usage: wgpu::TextureUsage::RENDER_ATTACHMENT,
+        let surface_configuration = wgpu::SurfaceConfiguration {
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
             format: RealizedView::FRAME_TEXTURE_FORMAT,
             width: size[0],
             height: size[1],
             present_mode: wgpu::PresentMode::Mailbox,
         };
-        let swap_chain = device.create_swap_chain(&surface, &sc_desc);
+        surface.configure(&device, &surface_configuration);
 
         let uniform_bind_group_layout =
             device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
                 entries: &[wgpu::BindGroupLayoutEntry {
                     binding: 0,
-                    visibility: wgpu::ShaderStage::VERTEX,
+                    visibility: wgpu::ShaderStages::VERTEX,
                     ty: wgpu::BindingType::Buffer {
                         ty: wgpu::BufferBindingType::Uniform,
                         has_dynamic_offset: false,
@@ -123,7 +122,7 @@ impl Renderer {
                 entries: &[
                     wgpu::BindGroupLayoutEntry {
                         binding: 0,
-                        visibility: wgpu::ShaderStage::FRAGMENT,
+                        visibility: wgpu::ShaderStages::FRAGMENT,
                         ty: wgpu::BindingType::Texture {
                             sample_type: wgpu::TextureSampleType::Float { filterable: false },
                             view_dimension: wgpu::TextureViewDimension::D2Array,
@@ -133,7 +132,7 @@ impl Renderer {
                     },
                     wgpu::BindGroupLayoutEntry {
                         binding: 1,
-                        visibility: wgpu::ShaderStage::FRAGMENT,
+                        visibility: wgpu::ShaderStages::FRAGMENT,
                         ty: wgpu::BindingType::Sampler {
                             filtering: true,
                             comparison: false,
@@ -170,8 +169,7 @@ impl Renderer {
             surface,
             device,
             queue,
-            sc_desc,
-            swap_chain,
+            surface_configuration,
             pipelines,
             textures,
             meshes,
@@ -184,9 +182,10 @@ impl Renderer {
 
     pub fn resize(&mut self, size: [u32; 2]) {
         self.size = size;
-        self.sc_desc.width = size[0];
-        self.sc_desc.height = size[1];
-        self.swap_chain = self.device.create_swap_chain(&self.surface, &self.sc_desc);
+        self.surface_configuration.width = size[0];
+        self.surface_configuration.height = size[1];
+        self.surface
+            .configure(&self.device, &self.surface_configuration);
         self.canvasses.resize(&self.device, self.size);
     }
 
@@ -194,7 +193,7 @@ impl Renderer {
         self.canvasses.draw(
             &self.device,
             &self.queue,
-            &self.swap_chain,
+            &self.surface,
             &self.cameras,
             &self.pipelines,
             &self.textures,
@@ -270,7 +269,7 @@ fn on_display_created_event(
         event.window_size,
         render_resources.instance,
         render_resources.window_surface,
-        Samples::Two,
+        Samples::Four,
     ))
     .expect("renderer creation");
 
