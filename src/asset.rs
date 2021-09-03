@@ -538,6 +538,20 @@ impl<T: 'static, S> AssetId<T, S> {
     }
 }
 
+impl<T: 'static> From<AssetId<T, Strong>> for AssetId<T, Weak> {
+    #[inline]
+    fn from(id: AssetId<T, Strong>) -> Self {
+        id.to_weak()
+    }
+}
+
+impl<T: 'static> From<AssetId<T, Loaded>> for AssetId<T, Weak> {
+    #[inline]
+    fn from(id: AssetId<T, Loaded>) -> Self {
+        id.to_weak()
+    }
+}
+
 impl<T: 'static> From<Uuid> for AssetId<T, Weak> {
     #[inline]
     fn from(uuid: Uuid) -> Self {
