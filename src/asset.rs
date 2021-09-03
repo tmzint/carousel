@@ -510,6 +510,13 @@ impl<T: 'static> AssetId<T, Loaded> {
     }
 }
 
+impl<T: 'static> From<AssetId<T, Loaded>> for AssetId<T, Strong> {
+    #[inline]
+    fn from(loaded: AssetId<T, Loaded>) -> Self {
+        loaded.to_strong()
+    }
+}
+
 impl<T: 'static> AssetId<T, Strong> {
     unsafe fn into_loaded(self) -> LoadedAssetId<T> {
         AssetId {
