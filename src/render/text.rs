@@ -13,10 +13,10 @@ use nalgebra::{
     Isometry3, Point2, Rotation2, Similarity2, Similarity3, Translation3, UnitQuaternion, Vector3,
 };
 use serde::Deserialize;
-use std::borrow::Cow;
 use std::collections::BTreeSet;
 use std::convert::TryFrom;
 use std::hash::{Hash, Hasher};
+use std::sync::Arc;
 use unicode_linebreak::BreakOpportunity;
 use uuid::Uuid;
 
@@ -553,8 +553,7 @@ impl Default for VerticalAlignment {
 pub struct RawText<S> {
     pub pipeline: AssetId<Pipeline, S>,
     pub font: AssetId<Font, S>,
-    // Optimization: Arc?
-    pub content: Cow<'static, str>,
+    pub content: Arc<str>,
     pub position: Point2<f32>,
     pub z_index: f32,
     pub rotation: Rotation2<f32>,

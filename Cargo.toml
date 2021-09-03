@@ -7,7 +7,7 @@ resolver = "2"
 
 [dependencies]
 ahash = { version = "^0.7", feature = ["compile-time-rng"] }
-serde = { version = "^1.0", features = ["derive"] }
+serde = { version = "^1.0", features = ["derive", "rc"] }
 serde_json = "^1.0"
 uuid = { version = "^0.8", features = ["serde", "v4"] }
 indexmap = { version = "^1.5", features = ["rayon"] }

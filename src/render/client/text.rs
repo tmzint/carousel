@@ -7,9 +7,13 @@ use crate::render::text::{Font, HorizontalAlignment, RawText, VerticalAlignment}
 use crate::util::{Bounded, Bounds};
 use nalgebra::{Isometry2, Point2, Rotation2, Similarity2, Vector2};
 use serde::Deserialize;
-use std::borrow::Cow;
 use std::ops::{Deref, DerefMut};
+use std::sync::Arc;
 use uuid::Uuid;
+
+fn arcstr_default() -> Arc<str> {
+    "".to_string().into()
+}
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -18,8 +22,8 @@ pub struct TextBuilder<S> {
     pub pipeline: Option<AssetId<Pipeline, S>>,
     #[serde(default, bound(deserialize = "AssetId<Font, S>: Deserialize<'de>"))]
     pub font: Option<AssetId<Font, S>>,
-    #[serde(default)]
-    pub content: Cow<'static, str>,
+    #[serde(default = "arcstr_default")]
+    pub content: Arc<str>,
     #[serde(default = "Point2::origin")]
     pub position: Point2<f32>,
     #[serde(default)]
@@ -61,7 +65,7 @@ impl<S> TextBuilder<S> {
     }
 
     #[inline]
-    pub fn with_content<I: Into<Cow<'static, str>>>(mut self, content: I) -> Self {
+    pub fn with_content<I: Into<Arc<str>>>(mut self, content: I) -> Self {
         self.content = content.into();
         self
     }
@@ -197,7 +201,7 @@ impl<S> Default for TextBuilder<S> {
         Self {
             pipeline: None,
             font: None,
-            content: Default::default(),
+            content: arcstr_default(),
             position: Point2::origin(),
             z_index: 0.0,
             rotation: Rotation2::identity(),
