@@ -452,6 +452,16 @@ impl<T, S> AssetId<T, S> {
     }
 }
 
+impl<T, S> AssetId<T, S>
+where
+    AssetId<T, S>: Into<DynAssetId<T>>,
+{
+    #[inline]
+    pub fn into_dyn(self) -> DynAssetId<T> {
+        self.into()
+    }
+}
+
 impl<T: 'static> AssetId<T, Weak> {
     fn new(uri: AssetUri) -> Self {
         let untyped = UntypedAssetId::new::<T>(uri);
