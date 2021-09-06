@@ -88,7 +88,7 @@ fn main(input: VertexOutput) -> FragmentOutput {
     if (fill_alpha < 0.0001) {
         discard;
     }
-    out.color = vec4<f32>(input.tint.rgb, input.tint.z * fill_alpha);
+    out.color = vec4<f32>(input.tint.rgb, input.tint.a * fill_alpha);
 
     return out;
 }
