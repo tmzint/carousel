@@ -22,14 +22,14 @@ struct VertexInput {
     [[location(8)]] model_c3: vec4<f32>;
 
     [[location(9)]] scale: vec3<f32>;
-    [[location(10)]] tint: vec3<f32>;
+    [[location(10)]] tint: vec4<f32>;
     [[location(11)]] texture_layer: i32;
 };
 
 struct VertexOutput {
     [[builtin(position)]] position: vec4<f32>;
     [[location(0)]] tex_coords: vec2<f32>;
-    [[location(1)]] tint: vec3<f32>;
+    [[location(1)]] tint: vec4<f32>;
     [[location(3)]] texture_layer: i32;
 };
 
@@ -66,7 +66,7 @@ struct FragmentOutput {
 fn main(input: VertexOutput) -> FragmentOutput {
     var out: FragmentOutput;
 
-    out.color = textureSample(t_diffuse, s_diffuse, input.tex_coords, input.texture_layer) * vec4<f32>(input.tint, 1.0);
+    out.color = textureSample(t_diffuse, s_diffuse, input.tex_coords, input.texture_layer) * input.tint;
     if (out.color.a < 0.0001) {
         discard;
     }

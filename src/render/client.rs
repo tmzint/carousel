@@ -21,7 +21,7 @@ use crate::render::message::{
 use crate::render::pipeline::{Pipeline, Pipelines};
 use crate::render::text::{Font, Texts};
 use crate::render::view::{Texture, Textures};
-use nalgebra::{Vector2, Vector3, Point2};
+use nalgebra::{Point2, Vector2, Vector3};
 use parking_lot::Mutex;
 use roundabout::prelude::MessageSender;
 use std::marker::PhantomData;
@@ -300,6 +300,6 @@ fn f32_one() -> f32 {
     1.0
 }
 
-fn arr3_one() -> [f32; 3] {
-    [1.0, 1.0, 1.0]
+fn arr4_one() -> [f32; 4] {
+    [1.0, 1.0, 1.0, 1.0]
 }

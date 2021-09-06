@@ -36,7 +36,7 @@ impl Vertex {
 pub struct Instance {
     pub model: [[f32; 4]; 4],
     pub scale: [f32; 3],
-    pub tint: [f32; 3],
+    pub tint: [f32; 4],
     pub texture_layer: i32,
 }
 
@@ -78,11 +78,11 @@ impl Instance {
                 wgpu::VertexAttribute {
                     offset: mem::size_of::<[f32; 19]>() as wgpu::BufferAddress,
                     shader_location: 10,
-                    format: wgpu::VertexFormat::Float32x3,
+                    format: wgpu::VertexFormat::Float32x4,
                 },
                 // texture_layer
                 wgpu::VertexAttribute {
-                    offset: mem::size_of::<[f32; 22]>() as wgpu::BufferAddress,
+                    offset: mem::size_of::<[f32; 23]>() as wgpu::BufferAddress,
                     shader_location: 11,
                     format: wgpu::VertexFormat::Sint32,
                 },

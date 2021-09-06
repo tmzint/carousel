@@ -197,7 +197,7 @@ pub struct RawCurve<S> {
     pub z_index: f32,
     pub rotation: Rotation2<f32>,
     pub scale: Vector2<f32>,
-    pub tint: [f32; 3],
+    pub tint: [f32; 4],
     pub world: Similarity2<f32>,
     pub world_z_index: f32,
 }

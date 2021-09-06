@@ -22,7 +22,7 @@ pub struct RawInstance<S> {
     pub texture_layer: u32,
     pub model: Isometry3<f32>,
     pub scale: Vector3<f32>,
-    pub tint: [f32; 3],
+    pub tint: [f32; 4],
     pub world: Similarity3<f32>,
 }
 

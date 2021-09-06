@@ -564,7 +564,7 @@ pub struct RawText<S> {
     pub vertical_alignment: VerticalAlignment,
     pub horizontal_alignment: HorizontalAlignment,
     pub scale: f32,
-    pub tint: [f32; 3],
+    pub tint: [f32; 4],
     pub world: Similarity2<f32>,
     pub world_z_index: f32,
 }

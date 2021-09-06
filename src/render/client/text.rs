@@ -44,8 +44,8 @@ pub struct TextBuilder<S> {
     pub horizontal_alignment: HorizontalAlignment,
     #[serde(default = "super::f32_one")]
     pub scale: f32,
-    #[serde(default = "super::arr3_one")]
-    pub tint: [f32; 3],
+    #[serde(default = "super::arr4_one")]
+    pub tint: [f32; 4],
     #[serde(default = "Similarity2::identity")]
     pub world: Similarity2<f32>,
     pub world_z_index: f32,
@@ -131,7 +131,7 @@ impl<S> TextBuilder<S> {
     }
 
     #[inline]
-    pub fn with_tint(mut self, tint: [f32; 3]) -> Self {
+    pub fn with_tint(mut self, tint: [f32; 4]) -> Self {
         self.tint = tint;
         self
     }
@@ -212,7 +212,7 @@ impl<S> Default for TextBuilder<S> {
             vertical_alignment: Default::default(),
             horizontal_alignment: Default::default(),
             scale: super::f32_one(),
-            tint: super::arr3_one(),
+            tint: super::arr4_one(),
             world: Similarity2::identity(),
             world_z_index: 0.0,
         }

@@ -31,14 +31,14 @@ struct VertexInput {
 
     // [scale, point / size, distance_range]
     [[location(9)]] scale: vec3<f32>;
-    [[location(10)]] tint: vec3<f32>;
+    [[location(10)]] tint: vec4<f32>;
     [[location(11)]] texture_layer: i32;
 };
 
 struct VertexOutput {
     [[builtin(position)]] position: vec4<f32>;
     [[location(0)]] tex_coords: vec2<f32>;
-    [[location(1)]] tint: vec3<f32>;
+    [[location(1)]] tint: vec4<f32>;
     [[location(2)]] distance_factor: f32;
     [[location(3)]] texture_layer: i32;
 };
@@ -88,7 +88,7 @@ fn main(input: VertexOutput) -> FragmentOutput {
     if (fill_alpha < 0.0001) {
         discard;
     }
-    out.color = vec4<f32>(input.tint.rgb, fill_alpha);
+    out.color = vec4<f32>(input.tint.rgb, input.tint.z * fill_alpha);
 
     return out;
 }

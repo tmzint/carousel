@@ -23,7 +23,7 @@ pub struct RawRectangle<S> {
     pub rotation: Rotation2<f32>,
     pub size: Vector2<f32>,
     pub scale: Vector2<f32>,
-    pub tint: [f32; 3],
+    pub tint: [f32; 4],
     pub world: Similarity2<f32>,
     pub world_z_index: f32,
 }
@@ -90,8 +90,8 @@ pub struct RectangleBuilder<S> {
     pub size: Vector2<f32>,
     #[serde(default = "super::vector2_one")]
     pub scale: Vector2<f32>,
-    #[serde(default = "super::arr3_one")]
-    pub tint: [f32; 3],
+    #[serde(default = "super::arr4_one")]
+    pub tint: [f32; 4],
     #[serde(default = "Similarity2::identity")]
     pub world: Similarity2<f32>,
     #[serde(default)]
@@ -136,7 +136,7 @@ impl<S> RectangleBuilder<S> {
     }
 
     #[inline]
-    pub fn with_tint(mut self, tint: [f32; 3]) -> Self {
+    pub fn with_tint(mut self, tint: [f32; 4]) -> Self {
         self.tint = tint;
         self
     }
@@ -215,7 +215,7 @@ impl<S> Default for RectangleBuilder<S> {
             rotation: Rotation2::identity(),
             size: super::vector2_one(),
             scale: super::vector2_one(),
-            tint: super::arr3_one(),
+            tint: super::arr4_one(),
             world: Similarity2::identity(),
             world_z_index: 0.0,
         }

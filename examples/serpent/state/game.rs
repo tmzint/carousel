@@ -53,7 +53,7 @@ impl SerpentSegment {
             Rectangle::builder()
                 .with_position(Point2::new(logical.x, logical.y))
                 .with_size(Vector2::new(GRID_ENTRY_EXTENDS, GRID_ENTRY_EXTENDS) * 0.8)
-                .with_tint([1.0, 1.0, 1.0]),
+                .with_tint([1.0, 1.0, 1.0, 1.0]),
         );
 
         SerpentSegment { position, rect }
@@ -73,7 +73,7 @@ impl Food {
             Rectangle::builder()
                 .with_position(Point2::new(logical.x, logical.y))
                 .with_size(Vector2::new(GRID_ENTRY_EXTENDS, GRID_ENTRY_EXTENDS) * 0.5)
-                .with_tint([1.0, 1.0, 1.0]),
+                .with_tint([1.0, 1.0, 1.0, 1.0]),
         );
 
         Food { position, rect }
@@ -116,7 +116,7 @@ impl GameRunState {
         let grid_curve = render_resource.main_layer.spawn(
             Curve::builder()
                 .with_path(grid_path.finalize())
-                .with_tint([1.0, 1.0, 1.0])
+                .with_tint([1.0, 1.0, 1.0, 1.0])
                 .with_stroke(StrokeOptions {
                     line_width: 3.0,
                     end_cap: LineCap::Round,

@@ -26,8 +26,8 @@ pub struct CurveBuilder<S> {
     pub rotation: Rotation2<f32>,
     #[serde(default = "super::vector2_one")]
     pub scale: Vector2<f32>,
-    #[serde(default = "super::arr3_one")]
-    pub tint: [f32; 3],
+    #[serde(default = "super::arr4_one")]
+    pub tint: [f32; 4],
     #[serde(default = "Similarity2::identity")]
     pub world: Similarity2<f32>,
     #[serde(default)]
@@ -78,7 +78,7 @@ impl<S> CurveBuilder<S> {
     }
 
     #[inline]
-    pub fn with_tint(mut self, tint: [f32; 3]) -> Self {
+    pub fn with_tint(mut self, tint: [f32; 4]) -> Self {
         self.tint = tint;
         self
     }
@@ -147,7 +147,7 @@ impl<S> Default for CurveBuilder<S> {
             z_index: 0.0,
             rotation: Rotation2::identity(),
             scale: super::vector2_one(),
-            tint: super::arr3_one(),
+            tint: super::arr4_one(),
             world: Similarity2::identity(),
             world_z_index: 0.0,
         }
