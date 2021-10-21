@@ -25,6 +25,7 @@ use nalgebra::{Point2, Vector2, Vector3};
 use parking_lot::Mutex;
 use roundabout::prelude::MessageSender;
 use std::marker::PhantomData;
+use std::ops::Deref;
 use std::rc::Rc;
 use uuid::Uuid;
 
@@ -100,14 +101,14 @@ pub trait LayerSpawner {
 }
 
 #[derive(Debug)]
-pub struct CanvasLayer {
+struct InnerCanvasLayer {
     id: Uuid,
     defaults: Rc<RenderDefaults>,
-    pub(crate) sender: MessageSender,
+    sender: MessageSender,
 }
 
-impl CanvasLayer {
-    pub(crate) fn new(defaults: Rc<RenderDefaults>, sender: MessageSender) -> Self {
+impl InnerCanvasLayer {
+    fn new(defaults: Rc<RenderDefaults>, sender: MessageSender) -> Self {
         let id = Uuid::new_v4();
 
         sender.send(CanvasLayerEvent {
@@ -115,36 +116,56 @@ impl CanvasLayer {
             kind: CanvasLayerEventKind::Created,
         });
 
-        CanvasLayer {
+        InnerCanvasLayer {
             id,
             defaults,
             sender,
         }
     }
-
-    #[inline]
-    pub fn id(&self) -> Uuid {
-        self.id
-    }
-
-    #[inline]
-    pub fn defaults(&self) -> &RenderDefaults {
-        &self.defaults
-    }
-
-    #[inline]
-    pub fn spawn<T: LayerSpawner>(&self, spawner: T) -> T::Handle {
-        spawner.spawn(self)
-    }
 }
 
-impl Drop for CanvasLayer {
+impl Drop for InnerCanvasLayer {
     #[inline]
     fn drop(&mut self) {
         self.sender.send(CanvasLayerEvent {
             id: self.id,
             kind: CanvasLayerEventKind::Dropped,
         });
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct CanvasLayer(Rc<InnerCanvasLayer>);
+
+impl CanvasLayer {
+    pub(crate) fn new(defaults: Rc<RenderDefaults>, sender: MessageSender) -> Self {
+        Self(Rc::new(InnerCanvasLayer::new(defaults, sender)))
+    }
+
+    #[inline]
+    pub fn id(&self) -> Uuid {
+        self.0.id
+    }
+
+    #[inline]
+    pub fn defaults(&self) -> &RenderDefaults {
+        &self.0.defaults
+    }
+
+    #[inline]
+    pub fn spawn<T: LayerSpawner>(&self, spawner: T) -> T::Handle {
+        spawner.spawn(self)
+    }
+
+    #[inline]
+    pub fn sender(&self) -> &MessageSender {
+        &self.0.sender
+    }
+
+    #[inline]
+    pub fn parts(&self) -> (Uuid, &RenderDefaults, &MessageSender) {
+        let inner = self.0.deref();
+        (inner.id, &inner.defaults, &inner.sender)
     }
 }
 

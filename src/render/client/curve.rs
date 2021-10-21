@@ -99,15 +99,15 @@ impl<S> CurveBuilder<S> {
 impl CurveBuilder<Strong> {
     fn finalize(self, layer: &CanvasLayer) -> Curve {
         let id = Uuid::new_v4();
-
-        let raw_curve = self.into_raw(layer.defaults());
-        layer.sender.send(CurveEvent {
+        let (layer_uuid, defaults, sender) = layer.parts();
+        let raw_curve = self.into_raw(defaults);
+        sender.send(CurveEvent {
             id,
-            layer: layer.id(),
+            layer: layer_uuid,
             kind: CurveEventKind::Created(Box::new(raw_curve.to_weak())),
         });
 
-        Curve::new(id, layer.id(), raw_curve, layer.sender.clone())
+        Curve::new(id, layer_uuid, raw_curve, sender.to_owned())
     }
 
     fn into_raw(self, defaults: &RenderDefaults) -> RawCurve<Strong> {

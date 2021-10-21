@@ -85,19 +85,21 @@ impl<S> InstanceBuilder<S> {
 impl InstanceBuilder<Strong> {
     fn finalize(self, layer: &CanvasLayer) -> Instance {
         let id = Uuid::new_v4();
-        let raw = self.into_raw(&layer.defaults);
+        let (layer_uuid, defaults, sender) = layer.parts();
 
-        layer.sender.send(InstanceEvent {
+        let raw = self.into_raw(&defaults);
+
+        sender.send(InstanceEvent {
             id,
-            layer: layer.id(),
+            layer: layer_uuid,
             kind: InstanceEventKind::Created(Box::new(raw.to_weak())),
         });
 
         Instance {
             id,
-            layer: layer.id(),
+            layer: layer_uuid,
             raw,
-            sender: layer.sender.clone(),
+            sender: sender.to_owned(),
         }
     }
 

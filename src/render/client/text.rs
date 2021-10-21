@@ -152,15 +152,16 @@ impl<S> TextBuilder<S> {
 impl TextBuilder<Strong> {
     fn finalize(self, layer: &CanvasLayer) -> Text {
         let id = Uuid::new_v4();
+        let (layer_uuid, defaults, sender) = layer.parts();
 
-        let raw_text = self.into_raw(layer.defaults());
-        layer.sender.send(TextEvent {
+        let raw_text = self.into_raw(defaults);
+        sender.send(TextEvent {
             id,
-            layer: layer.id(),
+            layer: layer_uuid,
             kind: TextEventKind::Created(Box::new(raw_text.to_weak())),
         });
 
-        Text::new(id, layer.id(), raw_text, layer.sender.clone())
+        Text::new(id, layer_uuid, raw_text, sender.clone())
     }
 
     fn into_raw(self, defaults: &RenderDefaults) -> RawText<Strong> {

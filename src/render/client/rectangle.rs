@@ -157,26 +157,27 @@ impl<S> RectangleBuilder<S> {
 impl RectangleBuilder<Strong> {
     fn finalize(self, layer: &CanvasLayer) -> Rectangle {
         let id = Uuid::new_v4();
+        let (layer_uuid, defaults, sender) = layer.parts();
 
-        let unit_square_mesh = layer.defaults().unit_square_mesh.clone();
-        let white_texture = layer.defaults().white_texture.clone();
-        let raw_rectangle = self.into_raw(layer.defaults());
+        let unit_square_mesh = defaults.unit_square_mesh.clone();
+        let white_texture = defaults.white_texture.clone();
+        let raw_rectangle = self.into_raw(defaults);
         let raw_instance = raw_rectangle
             .to_weak()
             .into_raw_instance(unit_square_mesh.to_weak(), white_texture.to_weak());
-        layer.sender.send(InstanceEvent {
+        sender.send(InstanceEvent {
             id,
-            layer: layer.id(),
+            layer: layer_uuid,
             kind: InstanceEventKind::Created(Box::new(raw_instance)),
         });
 
         Rectangle {
             id,
-            layer: layer.id(),
+            layer: layer_uuid,
             unit_square_mesh,
             white_texture,
             raw: raw_rectangle,
-            sender: layer.sender.clone(),
+            sender: sender.to_owned(),
         }
     }
 

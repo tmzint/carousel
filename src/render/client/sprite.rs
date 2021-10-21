@@ -173,24 +173,25 @@ impl<S> SpriteBuilder<S> {
 impl SpriteBuilder<Strong> {
     fn finalize(self, layer: &CanvasLayer) -> Sprite {
         let id = Uuid::new_v4();
+        let (layer_uuid, defaults, sender) = layer.parts();
 
-        let unit_square_mesh = layer.defaults().unit_square_mesh.clone();
-        let raw_rectangle = self.into_raw(layer.defaults());
+        let unit_square_mesh = defaults.unit_square_mesh.clone();
+        let raw_rectangle = self.into_raw(defaults);
         let raw_instance = raw_rectangle
             .to_weak()
             .into_raw_instance(unit_square_mesh.to_weak());
-        layer.sender.send(InstanceEvent {
+        sender.send(InstanceEvent {
             id,
-            layer: layer.id(),
+            layer: layer_uuid,
             kind: InstanceEventKind::Created(Box::new(raw_instance)),
         });
 
         Sprite {
             id,
-            layer: layer.id(),
+            layer: layer_uuid,
             unit_square_mesh,
             raw: raw_rectangle,
-            sender: layer.sender.clone(),
+            sender: sender.to_owned(),
         }
     }
 
