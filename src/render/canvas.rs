@@ -596,9 +596,8 @@ impl Canvasses {
         textures: &Textures,
         meshes: &Meshes,
     ) -> anyhow::Result<()> {
-        let frame = surface.get_current_frame()?;
+        let frame = surface.get_current_texture()?;
         let target = frame
-            .output
             .texture
             .create_view(&wgpu::TextureViewDescriptor::default());
 
@@ -662,6 +661,7 @@ impl Canvasses {
         }
 
         queue.submit(std::iter::once(encoder.finish()));
+        frame.present();
 
         Ok(())
     }
