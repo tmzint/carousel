@@ -5,8 +5,8 @@ pub use crate::asset::loader::{
 pub use crate::asset::storage::{Assets, AssetsClient, AssetsPaths};
 pub use crate::asset::{
     AssetEvent, AssetEventKind, AssetId, AssetPath, AssetPathKind, AssetPathParam, AssetServer,
-    AssetUri, AssetsCreatedEvent, DynAssetId, LoadAssetEvent, LoadedAssetId, StrongAssetId,
-    WeakAssetId,
+    AssetUri, AssetsCreatedEvent, DynAssetId, LoadAssetEvent, Loaded, LoadedAssetId, Strong,
+    StrongAssetId, Weak, WeakAssetId,
 };
 pub use crate::platform::action::{ActionState, ActionTrigger, ActionsConfig};
 pub use crate::platform::input::{Cursor, MouseButton, PointerKind, ScrollDirection, WorldCursor};
