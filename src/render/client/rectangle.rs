@@ -96,6 +96,8 @@ pub struct RectangleBuilder<S> {
     pub world: Similarity2<f32>,
     #[serde(default)]
     pub world_z_index: f32,
+    #[serde(default)]
+    pub hidden: bool,
 }
 
 impl<S> RectangleBuilder<S> {
@@ -152,6 +154,12 @@ impl<S> RectangleBuilder<S> {
         self.world_z_index = world_z_index;
         self
     }
+
+    #[inline]
+    pub fn with_hidden(mut self, hidden: bool) -> Self {
+        self.hidden = hidden;
+        self
+    }
 }
 
 impl RectangleBuilder<Strong> {
@@ -161,21 +169,27 @@ impl RectangleBuilder<Strong> {
 
         let unit_square_mesh = defaults.unit_square_mesh.clone();
         let white_texture = defaults.white_texture.clone();
+        let hidden = self.hidden;
         let raw_rectangle = self.into_raw(defaults);
-        let raw_instance = raw_rectangle
-            .to_weak()
-            .into_raw_instance(unit_square_mesh.to_weak(), white_texture.to_weak());
-        sender.send(InstanceEvent {
-            id,
-            layer: layer_uuid,
-            kind: InstanceEventKind::Created(Box::new(raw_instance)),
-        });
+
+        if !hidden {
+            let raw_instance = raw_rectangle
+                .to_weak()
+                .into_raw_instance(unit_square_mesh.to_weak(), white_texture.to_weak());
+
+            sender.send(InstanceEvent {
+                id,
+                layer: layer_uuid,
+                kind: InstanceEventKind::Created(Box::new(raw_instance)),
+            });
+        }
 
         Rectangle {
             id,
             layer: layer_uuid,
             unit_square_mesh,
             white_texture,
+            hidden,
             raw: raw_rectangle,
             sender: sender.to_owned(),
         }
@@ -219,6 +233,7 @@ impl<S> Default for RectangleBuilder<S> {
             tint: super::arr4_one(),
             world: Similarity2::identity(),
             world_z_index: 0.0,
+            hidden: false,
         }
     }
 }
@@ -230,6 +245,7 @@ pub struct Rectangle {
     unit_square_mesh: StrongAssetId<Mesh>,
     white_texture: StrongAssetId<Texture>,
     raw: RawRectangle<Strong>,
+    hidden: bool,
     sender: MessageSender,
 }
 
@@ -246,7 +262,10 @@ impl Rectangle {
 
     #[inline]
     pub fn modify(&mut self) -> RectangleModify {
-        RectangleModify(self)
+        RectangleModify {
+            new_hidden: self.hidden,
+            underlying: self,
+        }
     }
 }
 
@@ -279,15 +298,18 @@ impl Clone for Rectangle {
     fn clone(&self) -> Self {
         let id = Uuid::new_v4();
 
-        let raw_instance = self.raw.to_weak().into_raw_instance(
-            self.unit_square_mesh.to_weak(),
-            self.white_texture.to_weak(),
-        );
-        self.sender.send(InstanceEvent {
-            id,
-            layer: self.layer,
-            kind: InstanceEventKind::Created(Box::new(raw_instance)),
-        });
+        if !self.hidden {
+            let raw_instance = self.raw.to_weak().into_raw_instance(
+                self.unit_square_mesh.to_weak(),
+                self.white_texture.to_weak(),
+            );
+
+            self.sender.send(InstanceEvent {
+                id,
+                layer: self.layer,
+                kind: InstanceEventKind::Created(Box::new(raw_instance)),
+            });
+        }
 
         Rectangle {
             id,
@@ -295,6 +317,7 @@ impl Clone for Rectangle {
             unit_square_mesh: self.unit_square_mesh.clone(),
             white_texture: self.white_texture.clone(),
             raw: self.raw.clone(),
+            hidden: self.hidden,
             sender: self.sender.clone(),
         }
     }
@@ -303,44 +326,70 @@ impl Clone for Rectangle {
 impl Drop for Rectangle {
     #[inline]
     fn drop(&mut self) {
-        self.sender.send(InstanceEvent {
-            id: self.id,
-            layer: self.layer,
-            kind: InstanceEventKind::Dropped,
-        });
+        if !self.hidden {
+            self.sender.send(InstanceEvent {
+                id: self.id,
+                layer: self.layer,
+                kind: InstanceEventKind::Dropped,
+            });
+        }
     }
 }
 
 #[derive(Debug)]
-pub struct RectangleModify<'a>(&'a mut Rectangle);
+pub struct RectangleModify<'a> {
+    new_hidden: bool,
+    underlying: &'a mut Rectangle,
+}
+
+impl<'a> RectangleModify<'a> {
+    pub fn hide(&mut self) {
+        self.new_hidden = true;
+    }
+
+    pub fn show(&mut self) {
+        self.new_hidden = false;
+    }
+}
 
 impl<'a> Deref for RectangleModify<'a> {
     type Target = RawRectangle<Strong>;
 
     #[inline]
     fn deref(&self) -> &Self::Target {
-        &self.0.raw
+        &self.underlying.raw
     }
 }
 
 impl<'a> DerefMut for RectangleModify<'a> {
     #[inline]
     fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.0.raw
+        &mut self.underlying.raw
     }
 }
 
 impl<'a> Drop for RectangleModify<'a> {
     #[inline]
     fn drop(&mut self) {
-        let raw_instance = self.0.raw.to_weak().into_raw_instance(
-            self.0.unit_square_mesh.to_weak(),
-            self.0.white_texture.to_weak(),
-        );
-        self.0.sender.send(InstanceEvent {
-            id: self.0.id,
-            layer: self.0.layer,
-            kind: InstanceEventKind::Modified(Box::new(raw_instance)),
-        });
+        let visibility_changed = self.underlying.hidden != self.new_hidden;
+        self.underlying.hidden = self.new_hidden;
+
+        if visibility_changed && self.underlying.hidden {
+            self.underlying.sender.send(InstanceEvent {
+                id: self.underlying.id,
+                layer: self.underlying.layer,
+                kind: InstanceEventKind::Dropped,
+            });
+        } else if !self.underlying.hidden {
+            let raw_instance = self.underlying.raw.to_weak().into_raw_instance(
+                self.underlying.unit_square_mesh.to_weak(),
+                self.underlying.white_texture.to_weak(),
+            );
+            self.underlying.sender.send(InstanceEvent {
+                id: self.underlying.id,
+                layer: self.underlying.layer,
+                kind: InstanceEventKind::Modified(Box::new(raw_instance)),
+            });
+        }
     }
 }
