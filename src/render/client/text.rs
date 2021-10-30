@@ -48,7 +48,10 @@ pub struct TextBuilder<S> {
     pub tint: [f32; 4],
     #[serde(default = "Similarity2::identity")]
     pub world: Similarity2<f32>,
+    #[serde(default)]
     pub world_z_index: f32,
+    #[serde(default)]
+    pub hidden: bool,
 }
 
 impl<S> TextBuilder<S> {
@@ -147,21 +150,30 @@ impl<S> TextBuilder<S> {
         self.world_z_index = world_z_index;
         self
     }
+
+    #[inline]
+    pub fn with_hidden(mut self, hidden: bool) -> Self {
+        self.hidden = hidden;
+        self
+    }
 }
 
 impl TextBuilder<Strong> {
     fn finalize(self, layer: &CanvasLayer) -> Text {
         let id = Uuid::new_v4();
         let (layer_uuid, defaults, sender) = layer.parts();
-
+        let hidden = self.hidden;
         let raw_text = self.into_raw(defaults);
-        sender.send(TextEvent {
-            id,
-            layer: layer_uuid,
-            kind: TextEventKind::Created(Box::new(raw_text.to_weak())),
-        });
 
-        Text::new(id, layer_uuid, raw_text, sender.clone())
+        if !hidden {
+            sender.send(TextEvent {
+                id,
+                layer: layer_uuid,
+                kind: TextEventKind::Created(Box::new(raw_text.to_weak())),
+            });
+        }
+
+        Text::new(id, layer_uuid, raw_text, hidden, sender.clone())
     }
 
     fn into_raw(self, defaults: &RenderDefaults) -> RawText<Strong> {
@@ -216,6 +228,7 @@ impl<S> Default for TextBuilder<S> {
             tint: super::arr4_one(),
             world: Similarity2::identity(),
             world_z_index: 0.0,
+            hidden: false,
         }
     }
 }
@@ -226,13 +239,20 @@ pub struct Text {
     layer: Uuid,
     raw: RawText<Strong>,
     major_hash: u64,
+    hidden: bool,
     sender: MessageSender,
 }
 
 impl Text {
     const DEFAULT_TEXT_SIZE: f32 = 1.0;
 
-    fn new(id: Uuid, layer: Uuid, raw: RawText<Strong>, sender: MessageSender) -> Self {
+    fn new(
+        id: Uuid,
+        layer: Uuid,
+        raw: RawText<Strong>,
+        hidden: bool,
+        sender: MessageSender,
+    ) -> Self {
         let major_hash = raw.major_hash();
 
         Self {
@@ -240,6 +260,7 @@ impl Text {
             layer,
             raw,
             major_hash,
+            hidden,
             sender,
         }
     }
@@ -256,7 +277,10 @@ impl Text {
 
     #[inline]
     pub fn modify(&mut self) -> TextModify {
-        TextModify(self)
+        TextModify {
+            new_hidden: self.hidden,
+            underlying: self,
+        }
     }
 
     fn default_text_size() -> f32 {
@@ -296,17 +320,20 @@ impl Clone for Text {
     fn clone(&self) -> Self {
         let id = Uuid::new_v4();
 
-        self.sender.send(TextEvent {
-            id,
-            layer: self.layer,
-            kind: TextEventKind::Created(Box::new(self.raw.to_weak())),
-        });
+        if !self.hidden {
+            self.sender.send(TextEvent {
+                id,
+                layer: self.layer,
+                kind: TextEventKind::Created(Box::new(self.raw.to_weak())),
+            });
+        }
 
         Text {
             id,
             layer: self.layer,
             raw: self.raw.clone(),
             major_hash: self.major_hash,
+            hidden: self.hidden,
             sender: self.sender.clone(),
         }
     }
@@ -315,46 +342,72 @@ impl Clone for Text {
 impl Drop for Text {
     #[inline]
     fn drop(&mut self) {
-        self.sender.send(TextEvent {
-            id: self.id,
-            layer: self.layer,
-            kind: TextEventKind::Dropped,
-        });
+        if !self.hidden {
+            self.sender.send(TextEvent {
+                id: self.id,
+                layer: self.layer,
+                kind: TextEventKind::Dropped,
+            });
+        }
     }
 }
 
-pub struct TextModify<'a>(&'a mut Text);
+pub struct TextModify<'a> {
+    new_hidden: bool,
+    underlying: &'a mut Text,
+}
+
+impl<'a> TextModify<'a> {
+    pub fn hide(&mut self) {
+        self.new_hidden = true;
+    }
+
+    pub fn show(&mut self) {
+        self.new_hidden = false;
+    }
+}
 
 impl<'a> Deref for TextModify<'a> {
     type Target = RawText<Strong>;
 
     #[inline]
     fn deref(&self) -> &Self::Target {
-        &self.0.raw
+        &self.underlying.raw
     }
 }
 
 impl<'a> DerefMut for TextModify<'a> {
     #[inline]
     fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.0.raw
+        &mut self.underlying.raw
     }
 }
 
 impl<'a> Drop for TextModify<'a> {
     #[inline]
     fn drop(&mut self) {
-        let new_major_hash = self.0.raw.major_hash();
-        let major_change = self.0.major_hash != new_major_hash;
-        self.0.major_hash = new_major_hash;
+        let visibility_changed = self.underlying.hidden != self.new_hidden;
+        self.underlying.hidden = self.new_hidden;
 
-        self.0.sender.send(TextEvent {
-            id: self.0.id,
-            layer: self.0.layer,
-            kind: TextEventKind::Modified {
-                raw: Box::new(self.0.raw.to_weak()),
-                major_change,
-            },
-        });
+        let new_major_hash = self.underlying.raw.major_hash();
+        let major_change = self.underlying.major_hash != new_major_hash;
+        self.underlying.major_hash = new_major_hash;
+
+        if visibility_changed && self.underlying.hidden {
+            self.underlying.sender.send(TextEvent {
+                id: self.underlying.id,
+                layer: self.underlying.layer,
+                kind: TextEventKind::Dropped,
+            });
+        } else if !self.underlying.hidden {
+            self.underlying.sender.send(TextEvent {
+                id: self.underlying.id,
+                layer: self.underlying.layer,
+                kind: TextEventKind::Modified {
+                    raw: Box::new(self.underlying.raw.to_weak()),
+                    major_change,
+                },
+            });
+        }
     }
 }
