@@ -30,6 +30,8 @@ pub struct InstanceBuilder<S> {
     pub tint: [f32; 4],
     #[serde(default = "Similarity3::identity")]
     pub world: Similarity3<f32>,
+    #[serde(default)]
+    pub hidden: bool,
 }
 
 impl<S> InstanceBuilder<S> {
@@ -80,25 +82,34 @@ impl<S> InstanceBuilder<S> {
         self.world = world;
         self
     }
+
+    #[inline]
+    pub fn with_hidden(mut self, hidden: bool) -> Self {
+        self.hidden = hidden;
+        self
+    }
 }
 
 impl InstanceBuilder<Strong> {
     fn finalize(self, layer: &CanvasLayer) -> Instance {
         let id = Uuid::new_v4();
         let (layer_uuid, defaults, sender) = layer.parts();
-
+        let hidden = self.hidden;
         let raw = self.into_raw(&defaults);
 
-        sender.send(InstanceEvent {
-            id,
-            layer: layer_uuid,
-            kind: InstanceEventKind::Created(Box::new(raw.to_weak())),
-        });
+        if !hidden {
+            sender.send(InstanceEvent {
+                id,
+                layer: layer_uuid,
+                kind: InstanceEventKind::Created(Box::new(raw.to_weak())),
+            });
+        }
 
         Instance {
             id,
             layer: layer_uuid,
             raw,
+            hidden,
             sender: sender.to_owned(),
         }
     }
@@ -143,6 +154,7 @@ impl<S> Default for InstanceBuilder<S> {
             scale: super::vector3_one(),
             tint: super::arr4_one(),
             world: Similarity3::identity(),
+            hidden: false,
         }
     }
 }
@@ -152,6 +164,7 @@ pub struct Instance {
     id: Uuid,
     layer: Uuid,
     raw: RawInstance<Strong>,
+    hidden: bool,
     sender: MessageSender,
 }
 
@@ -168,7 +181,10 @@ impl Instance {
 
     #[inline]
     pub fn modify(&mut self) -> InstanceModify {
-        InstanceModify(self)
+        InstanceModify {
+            new_hidden: self.hidden,
+            underlying: self,
+        }
     }
 }
 
@@ -186,16 +202,19 @@ impl Clone for Instance {
     fn clone(&self) -> Self {
         let id = Uuid::new_v4();
 
-        self.sender.send(InstanceEvent {
-            id,
-            layer: self.layer,
-            kind: InstanceEventKind::Created(Box::new(self.raw.to_weak())),
-        });
+        if !self.hidden {
+            self.sender.send(InstanceEvent {
+                id,
+                layer: self.layer,
+                kind: InstanceEventKind::Created(Box::new(self.raw.to_weak())),
+            });
+        }
 
         Instance {
             id,
             layer: self.layer,
             raw: self.raw.clone(),
+            hidden: self.hidden,
             sender: self.sender.clone(),
         }
     }
@@ -204,40 +223,66 @@ impl Clone for Instance {
 impl Drop for Instance {
     #[inline]
     fn drop(&mut self) {
-        self.sender.send(InstanceEvent {
-            id: self.id,
-            layer: self.layer,
-            kind: InstanceEventKind::Dropped,
-        });
+        if !self.hidden {
+            self.sender.send(InstanceEvent {
+                id: self.id,
+                layer: self.layer,
+                kind: InstanceEventKind::Dropped,
+            });
+        }
     }
 }
 
 #[derive(Debug)]
-pub struct InstanceModify<'a>(&'a mut Instance);
+pub struct InstanceModify<'a> {
+    new_hidden: bool,
+    underlying: &'a mut Instance,
+}
+
+impl<'a> InstanceModify<'a> {
+    pub fn hide(&mut self) {
+        self.new_hidden = true;
+    }
+
+    pub fn show(&mut self) {
+        self.new_hidden = false;
+    }
+}
 
 impl<'a> Deref for InstanceModify<'a> {
     type Target = RawInstance<Strong>;
 
     #[inline]
     fn deref(&self) -> &Self::Target {
-        &self.0.raw
+        &self.underlying.raw
     }
 }
 
 impl<'a> DerefMut for InstanceModify<'a> {
     #[inline]
     fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.0.raw
+        &mut self.underlying.raw
     }
 }
 
 impl<'a> Drop for InstanceModify<'a> {
     #[inline]
     fn drop(&mut self) {
-        self.0.sender.send(InstanceEvent {
-            id: self.0.id,
-            layer: self.0.layer,
-            kind: InstanceEventKind::Modified(Box::new(self.0.raw.to_weak())),
-        });
+        let visibility_changed = self.underlying.hidden != self.new_hidden;
+        self.underlying.hidden = self.new_hidden;
+
+        if visibility_changed && self.underlying.hidden {
+            self.underlying.sender.send(InstanceEvent {
+                id: self.underlying.id,
+                layer: self.underlying.layer,
+                kind: InstanceEventKind::Dropped,
+            });
+        } else if !self.underlying.hidden {
+            self.underlying.sender.send(InstanceEvent {
+                id: self.underlying.id,
+                layer: self.underlying.layer,
+                kind: InstanceEventKind::Modified(Box::new(self.underlying.raw.to_weak())),
+            });
+        }
     }
 }
