@@ -32,6 +32,8 @@ pub struct CurveBuilder<S> {
     pub world: Similarity2<f32>,
     #[serde(default)]
     pub world_z_index: f32,
+    #[serde(default)]
+    pub hidden: bool,
 }
 
 impl<S> CurveBuilder<S> {
@@ -94,20 +96,30 @@ impl<S> CurveBuilder<S> {
         self.world_z_index = world_z_index;
         self
     }
+
+    #[inline]
+    pub fn with_hidden(mut self, hidden: bool) -> Self {
+        self.hidden = hidden;
+        self
+    }
 }
 
 impl CurveBuilder<Strong> {
     fn finalize(self, layer: &CanvasLayer) -> Curve {
         let id = Uuid::new_v4();
         let (layer_uuid, defaults, sender) = layer.parts();
+        let hidden = self.hidden;
         let raw_curve = self.into_raw(defaults);
-        sender.send(CurveEvent {
-            id,
-            layer: layer_uuid,
-            kind: CurveEventKind::Created(Box::new(raw_curve.to_weak())),
-        });
 
-        Curve::new(id, layer_uuid, raw_curve, sender.to_owned())
+        if !hidden {
+            sender.send(CurveEvent {
+                id,
+                layer: layer_uuid,
+                kind: CurveEventKind::Created(Box::new(raw_curve.to_weak())),
+            });
+        }
+
+        Curve::new(id, layer_uuid, raw_curve, hidden, sender.to_owned())
     }
 
     fn into_raw(self, defaults: &RenderDefaults) -> RawCurve<Strong> {
@@ -150,6 +162,7 @@ impl<S> Default for CurveBuilder<S> {
             tint: super::arr4_one(),
             world: Similarity2::identity(),
             world_z_index: 0.0,
+            hidden: false,
         }
     }
 }
@@ -160,11 +173,18 @@ pub struct Curve {
     layer: Uuid,
     raw: RawCurve<Strong>,
     major_hash: u64,
+    hidden: bool,
     sender: MessageSender,
 }
 
 impl Curve {
-    fn new(id: Uuid, layer: Uuid, raw: RawCurve<Strong>, sender: MessageSender) -> Self {
+    fn new(
+        id: Uuid,
+        layer: Uuid,
+        raw: RawCurve<Strong>,
+        hidden: bool,
+        sender: MessageSender,
+    ) -> Self {
         let major_hash = raw.major_hash();
 
         Self {
@@ -172,6 +192,7 @@ impl Curve {
             layer,
             raw,
             major_hash,
+            hidden,
             sender,
         }
     }
@@ -187,7 +208,10 @@ impl Curve {
 
     #[inline]
     pub fn modify(&mut self) -> CurveModify {
-        CurveModify(self)
+        CurveModify {
+            new_hidden: self.hidden,
+            underlying: self,
+        }
     }
 }
 
@@ -205,17 +229,20 @@ impl Clone for Curve {
     fn clone(&self) -> Self {
         let id = Uuid::new_v4();
 
-        self.sender.send(CurveEvent {
-            id,
-            layer: self.layer,
-            kind: CurveEventKind::Created(Box::new(self.raw.to_weak())),
-        });
+        if !self.hidden {
+            self.sender.send(CurveEvent {
+                id,
+                layer: self.layer,
+                kind: CurveEventKind::Created(Box::new(self.raw.to_weak())),
+            });
+        }
 
         Curve {
             id,
             layer: self.layer,
             raw: self.raw.clone(),
             major_hash: self.major_hash,
+            hidden: self.hidden,
             sender: self.sender.clone(),
         }
     }
@@ -224,46 +251,72 @@ impl Clone for Curve {
 impl Drop for Curve {
     #[inline]
     fn drop(&mut self) {
-        self.sender.send(CurveEvent {
-            id: self.id,
-            layer: self.layer,
-            kind: CurveEventKind::Dropped,
-        });
+        if !self.hidden {
+            self.sender.send(CurveEvent {
+                id: self.id,
+                layer: self.layer,
+                kind: CurveEventKind::Dropped,
+            });
+        }
     }
 }
 
-pub struct CurveModify<'a>(&'a mut Curve);
+pub struct CurveModify<'a> {
+    new_hidden: bool,
+    underlying: &'a mut Curve,
+}
+
+impl<'a> CurveModify<'a> {
+    pub fn hide(&mut self) {
+        self.new_hidden = true;
+    }
+
+    pub fn show(&mut self) {
+        self.new_hidden = false;
+    }
+}
 
 impl<'a> Deref for CurveModify<'a> {
     type Target = RawCurve<Strong>;
 
     #[inline]
     fn deref(&self) -> &Self::Target {
-        &self.0.raw
+        &self.underlying.raw
     }
 }
 
 impl<'a> DerefMut for CurveModify<'a> {
     #[inline]
     fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.0.raw
+        &mut self.underlying.raw
     }
 }
 
 impl<'a> Drop for CurveModify<'a> {
     #[inline]
     fn drop(&mut self) {
-        let new_major_hash = self.0.raw.major_hash();
-        let major_change = self.0.major_hash != new_major_hash;
-        self.0.major_hash = new_major_hash;
+        let visibility_changed = self.underlying.hidden != self.new_hidden;
+        self.underlying.hidden = self.new_hidden;
 
-        self.0.sender.send(CurveEvent {
-            id: self.0.id,
-            layer: self.0.layer,
-            kind: CurveEventKind::Modified {
-                raw: Box::new(self.0.raw.to_weak()),
-                major_change,
-            },
-        });
+        let new_major_hash = self.underlying.raw.major_hash();
+        let major_change = self.underlying.major_hash != new_major_hash;
+        self.underlying.major_hash = new_major_hash;
+
+        if visibility_changed && self.underlying.hidden {
+            self.underlying.sender.send(CurveEvent {
+                id: self.underlying.id,
+                layer: self.underlying.layer,
+                kind: CurveEventKind::Dropped,
+            });
+        } else if !self.underlying.hidden {
+            self.underlying.sender.send(CurveEvent {
+                id: self.underlying.id,
+                layer: self.underlying.layer,
+                kind: CurveEventKind::Modified {
+                    raw: Box::new(self.underlying.raw.to_weak()),
+                    major_change,
+                },
+            });
+        }
     }
 }
